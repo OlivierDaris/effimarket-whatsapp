@@ -1,0 +1,224 @@
+"""Couche IA conversationnelle — interchangeable.
+
+Moteurs disponibles :
+  - "groq"   : Groq / Llama 3.3 (gratuit, sans facturation) — DÉFAUT
+  - "gemini" : Google Gemini (nécessite la facturation activée)
+
+Principe commun : l'IA ne connaît PAS le catalogue. Elle dispose d'un OUTIL
+`rechercher_produits(requete)` qu'elle appelle elle-même (function calling)
+autant de fois que nécessaire, lit les résultats, puis rédige sa réponse.
+Elle ne peut donc jamais inventer un produit ou un lien.
+
+Pour ajouter un moteur : implémenter `new_chat()` + `reply()` et l'enregistrer
+dans `get_provider()`. Le reste de l'application n'a pas à changer.
+"""
+from __future__ import annotations
+
+import json
+from typing import Protocol
+
+from app import config
+from app.catalog import Catalog
+
+SYSTEM_PROMPT = """Tu es l'assistant commercial de la marketplace Effi-Market \
+(https://effi-market.com), spécialisée dans les produits et services afro-caribéens \
+(alimentation, beauté & bien-être, mode africaine, art & culture, maison, services).
+
+Ton rôle : aider le client, par WhatsApp, à trouver le produit qu'il cherche et lui \
+donner le lien.
+
+Règles :
+- Réponds toujours en français, sur un ton chaleureux, poli et concis (messages courts, \
+adaptés à WhatsApp).
+- Pour trouver un produit, utilise TOUJOURS l'outil `rechercher_produits`. Choisis des \
+mots-clés pertinents (nom du produit, catégorie). Tu peux l'appeler plusieurs fois avec \
+des mots différents si le premier essai ne donne rien.
+- N'invente JAMAIS un produit, un prix ou un lien. Utilise uniquement ce que l'outil renvoie.
+- Quand tu proposes un produit, donne son nom, son prix et son lien.
+- Si l'outil ne renvoie rien, ne dis pas simplement « non » : demande une précision ou \
+propose de reformuler (couleur, taille, usage, catégorie…).
+- Si la demande est vague, pose une petite question pour cerner le besoin avant de chercher.
+- Reste dans ton rôle d'assistant Effi-Market ; ne réponds pas aux sujets hors marketplace."""
+
+# Description de l'outil, réutilisée par les deux moteurs.
+TOOL_NAME = "rechercher_produits"
+TOOL_DESCRIPTION = (
+    "Recherche des produits dans le catalogue Effi-Market à partir de mots-clés "
+    "en français (nom du produit ou catégorie)."
+)
+TOOL_PARAM_DESCRIPTION = (
+    "Mots-clés du produit à chercher (ex: 'beurre de karité', 'djembé', "
+    "'robe en pagne', 'café')."
+)
+
+
+def run_search(catalog: Catalog, requete: str) -> str:
+    """Exécute la recherche et renvoie un JSON que l'IA saura lire. Logique partagée."""
+    results = catalog.search(requete, limit=5)
+    if not results:
+        return json.dumps(
+            {"produits": [], "message": f"Aucun résultat pour « {requete} »"},
+            ensure_ascii=False,
+        )
+    produits = [
+        {
+            "nom": p.name,
+            "prix": p.price,
+            "categorie": p.category,
+            "marque": p.brand,
+            "description": p.description,
+            "lien": p.url,
+        }
+        for p, _score in results
+    ]
+    return json.dumps({"produits": produits}, ensure_ascii=False)
+
+
+class AIProvider(Protocol):
+    """Interface commune à tous les moteurs IA."""
+
+    def new_chat(self): ...
+    def reply(self, chat, user_message: str) -> str: ...
+
+
+# --- Groq (défaut, gratuit) ---------------------------------------------------
+class GroqProvider:
+    """API compatible OpenAI : on gère nous-mêmes la boucle d'appel d'outil."""
+
+    def __init__(self, catalog: Catalog, api_key: str, model_name: str):
+        if not api_key:
+            raise ValueError("GROQ_API_KEY manquante dans le .env")
+        from groq import Groq
+
+        self.catalog = catalog
+        self.model_name = model_name
+        self.client = Groq(api_key=api_key)
+        self.tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": TOOL_NAME,
+                    "description": TOOL_DESCRIPTION,
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "requete": {"type": "string", "description": TOOL_PARAM_DESCRIPTION}
+                        },
+                        "required": ["requete"],
+                    },
+                },
+            }
+        ]
+
+    # Nb max de messages conservés (hors prompt système) pour limiter coût/latence.
+    MAX_HISTORY = 24
+
+    def new_chat(self) -> list[dict]:
+        """Une conversation = la liste des messages, démarrée par le prompt système."""
+        return [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    def _trim(self, chat: list[dict]) -> None:
+        """Raccourcit l'historique en place, sans casser une séquence d'outil.
+
+        Appelé quand `chat` est dans un état propre (se termine par un message
+        assistant textuel). On garde le prompt système + les derniers messages,
+        et on s'assure que le premier message conservé est bien un 'user'
+        (sinon un 'tool'/'assistant' orphelin ferait planter l'API).
+        """
+        system, rest = chat[0], chat[1:]
+        if len(rest) <= self.MAX_HISTORY:
+            return
+        kept = rest[-self.MAX_HISTORY:]
+        while kept and kept[0]["role"] != "user":
+            kept.pop(0)
+        chat[:] = [system, *kept]
+
+    def reply(self, chat: list[dict], user_message: str) -> str:
+        self._trim(chat)  # état propre avant d'ajouter le nouveau message
+        chat.append({"role": "user", "content": user_message})
+
+        # Boucle : tant que l'IA veut appeler l'outil, on l'exécute et on relance.
+        for _ in range(6):  # garde-fou anti-boucle infinie
+            resp = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=chat,
+                tools=self.tools,
+                tool_choice="auto",
+                temperature=0.3,
+            )
+            msg = resp.choices[0].message
+
+            if not msg.tool_calls:
+                text = (msg.content or "").strip()
+                chat.append({"role": "assistant", "content": text})
+                return text
+
+            # L'IA demande une ou plusieurs recherches.
+            chat.append(
+                {
+                    "role": "assistant",
+                    "content": msg.content or "",
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
+                        for tc in msg.tool_calls
+                    ],
+                }
+            )
+            for tc in msg.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                result = run_search(self.catalog, args.get("requete", ""))
+                chat.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+
+        return "Désolé, je n'ai pas réussi à traiter votre demande. Pouvez-vous reformuler ?"
+
+
+# --- Gemini (option, si facturation activée) ---------------------------------
+class GeminiProvider:
+    def __init__(self, catalog: Catalog, api_key: str, model_name: str):
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY manquante dans le .env")
+        from google import genai
+        from google.genai import types
+
+        self.catalog = catalog
+        self.model_name = model_name
+        self.client = genai.Client(api_key=api_key)
+
+        def rechercher_produits(requete: str) -> str:
+            """Recherche des produits dans le catalogue Effi-Market.
+
+            Args:
+                requete: mots-clés du produit à chercher, en français.
+            """
+            return run_search(self.catalog, requete)
+
+        self._gen_config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            tools=[rechercher_produits],
+            temperature=0.3,
+        )
+
+    def new_chat(self):
+        return self.client.chats.create(model=self.model_name, config=self._gen_config)
+
+    def reply(self, chat, user_message: str) -> str:
+        response = chat.send_message(user_message)
+        return (response.text or "").strip()
+
+
+def get_provider(catalog: Catalog) -> AIProvider:
+    """Fabrique le moteur IA selon la configuration (.env : AI_PROVIDER)."""
+    if config.AI_PROVIDER == "groq":
+        return GroqProvider(catalog, config.GROQ_API_KEY, config.GROQ_MODEL)
+    if config.AI_PROVIDER == "gemini":
+        return GeminiProvider(catalog, config.GEMINI_API_KEY, config.GEMINI_MODEL)
+    raise ValueError(
+        f"AI_PROVIDER inconnu : '{config.AI_PROVIDER}'. Valeurs : 'groq', 'gemini'."
+    )

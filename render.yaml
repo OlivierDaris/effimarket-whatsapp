@@ -1,0 +1,38 @@
+# Déploiement Render (Blueprint) — https://render.com
+# Render lit ce fichier et crée automatiquement le service web.
+#
+# Les secrets (clés API, tokens) NE sont PAS ici : ils sont marqués "sync: false"
+# et se saisissent dans le tableau de bord Render (onglet Environment). Ils ne
+# sont donc jamais commités dans le dépôt git.
+services:
+  - type: web
+    name: effimarket-whatsapp
+    runtime: python
+    plan: free                 # offre gratuite (voir note "cold start")
+    region: frankfurt          # proche de l'Afrique/Europe ; ajustable
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # --- Catalogue ---
+      - key: CATALOG_PATH
+        value: data/effimarket_produits.xlsx
+      # --- IA (Groq) ---
+      - key: AI_PROVIDER
+        value: groq
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_API_KEY
+        sync: false            # à saisir dans le tableau de bord Render
+      # --- Conversations ---
+      - key: SESSION_TTL_MINUTES
+        value: "30"
+      # --- WhatsApp Cloud API ---
+      - key: WHATSAPP_VERIFY_TOKEN
+        value: effimarket_verify_2026
+      - key: WHATSAPP_TOKEN
+        sync: false            # à saisir dans le tableau de bord Render
+      - key: WHATSAPP_PHONE_ID
+        sync: false            # à saisir dans le tableau de bord Render

@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+# Catalogue : on ne versionne pas les .xlsx par défaut...
+data/*.xlsx
+data/*.xls
+# ...sauf le catalogue de production (nécessaire au déploiement Render)
+!data/sample_catalog.csv
+!data/effimarket_produits.xlsx
