@@ -14,6 +14,7 @@ courtes et l'expiration nettoie toute seule. La persistance sur disque pourra
 """
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 
@@ -35,6 +36,20 @@ class ConversationStore:
         self.provider = provider
         self.ttl_seconds = (ttl_minutes if ttl_minutes is not None else config.SESSION_TTL_MINUTES) * 60
         self._sessions: dict[str, _Session] = {}
+        # Un verrou par utilisateur : deux messages du même numéro arrivant
+        # coup sur coup ne modifient pas son fil en même temps (sinon l'historique
+        # se corrompt et l'IA renvoie une erreur). Deux numéros différents ne se
+        # bloquent pas entre eux.
+        self._user_locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
+
+    def _lock_for(self, user_id: str) -> threading.Lock:
+        with self._locks_guard:
+            lock = self._user_locks.get(user_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._user_locks[user_id] = lock
+            return lock
 
     def _get_session(self, user_id: str) -> _Session:
         """Renvoie la session de l'utilisateur, en créant/renouvelant si expirée."""
@@ -56,18 +71,25 @@ class ConversationStore:
             return ("C'est reparti sur de nouvelles bases ! 🌿 "
                     "Que recherchez-vous sur Effi-Market ?")
 
-        sess = self._get_session(user_id)
-        answer = self.provider.reply(sess.chat, message)
-        sess.last_activity = time.time()
-        return answer
+        # Sérialise les messages d'un même utilisateur (pas ceux des autres).
+        with self._lock_for(user_id):
+            sess = self._get_session(user_id)
+            answer = self.provider.reply(sess.chat, message)
+            sess.last_activity = time.time()
+            return answer
 
     def cleanup_expired(self) -> int:
         """Supprime les sessions inactives. Renvoie le nombre supprimé."""
         now = time.time()
-        expired = [uid for uid, s in self._sessions.items()
+        # Snapshot (list(...)) : évite « dictionary changed size during iteration »
+        # si un autre message arrive pendant le nettoyage.
+        expired = [uid for uid, s in list(self._sessions.items())
                    if (now - s.last_activity) > self.ttl_seconds]
         for uid in expired:
-            del self._sessions[uid]
+            self._sessions.pop(uid, None)
+        with self._locks_guard:
+            for uid in expired:
+                self._user_locks.pop(uid, None)
         return len(expired)
 
     @property

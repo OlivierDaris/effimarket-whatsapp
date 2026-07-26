@@ -12,6 +12,8 @@ et configurer l'URL ngrok + le "verify token" dans Meta for Developers.
 """
 from __future__ import annotations
 
+from collections import deque
+
 from fastapi import BackgroundTasks, FastAPI, Request, Response
 
 from app import config, whatsapp
@@ -27,7 +29,22 @@ provider = get_provider(catalog)
 store = ConversationStore(provider)
 
 # Dédup : Meta réémet parfois le même message ; on ignore les IDs déjà traités.
+# Borné : on ne garde que les N derniers IDs (au-delà, un doublon si vieux est
+# improbable) pour éviter une croissance mémoire sans fin.
+_SEEN_MAX = 2000
+_seen_ids_order: deque[str] = deque(maxlen=_SEEN_MAX)
 _seen_message_ids: set[str] = set()
+
+
+def _already_seen(msg_id: str) -> bool:
+    """Vrai si l'ID a déjà été traité ; sinon le mémorise (en bornant la taille)."""
+    if msg_id in _seen_message_ids:
+        return True
+    if len(_seen_ids_order) == _SEEN_MAX:
+        _seen_message_ids.discard(_seen_ids_order[0])  # sera évincé par le maxlen
+    _seen_ids_order.append(msg_id)
+    _seen_message_ids.add(msg_id)
+    return False
 
 
 @app.get("/")
@@ -60,13 +77,21 @@ def _handle_message(sender: str, text: str) -> None:
     except Exception as e:
         print(f"[IA ERREUR] {e}")
         answer = "Désolé, un souci technique est survenu. Réessayez dans un instant 🙏"
-    whatsapp.send_text(sender, answer)
+    # L'envoi peut échouer (token, numéro non autorisé…) : on le rattrape ici pour
+    # garder un log lisible, sans laisser remonter une pile d'appels illisible.
+    try:
+        whatsapp.send_text(sender, answer)
+    except Exception as e:
+        print(f"[ENVOI ÉCHOUÉ vers {sender}] {e}")
 
 
 @app.post("/webhook")
 async def receive_webhook(request: Request, background: BackgroundTasks):
     """Reçoit les événements WhatsApp. On répond 200 tout de suite, on traite en fond."""
     data = await request.json()
+
+    # Nettoyage opportuniste des sessions expirées (évite l'accumulation).
+    store.cleanup_expired()
 
     for entry in data.get("entry", []):
         for change in entry.get("changes", []):
@@ -76,9 +101,8 @@ async def receive_webhook(request: Request, background: BackgroundTasks):
                 if message.get("type") != "text":
                     continue
                 msg_id = message.get("id", "")
-                if msg_id in _seen_message_ids:
+                if not msg_id or _already_seen(msg_id):
                     continue
-                _seen_message_ids.add(msg_id)
 
                 sender = message.get("from", "")
                 text = message.get("text", {}).get("body", "").strip()
