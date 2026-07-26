@@ -58,6 +58,16 @@ def health():
     }
 
 
+@app.get("/ping")
+def ping():
+    """Point d'entrée ultra-léger pour le maintien en éveil (keep-alive).
+
+    Renvoie 2 octets de texte brut : idéal pour un service de ping externe
+    (cron-job.org…) qui limite la taille de réponse acceptée.
+    """
+    return Response(content="ok", media_type="text/plain")
+
+
 @app.get("/webhook")
 def verify_webhook(request: Request):
     """Handshake Meta : renvoyer le hub.challenge si le verify_token correspond."""
