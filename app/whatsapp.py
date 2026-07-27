@@ -86,3 +86,33 @@ def diagnose(waba_id: str) -> dict:
         report["subscribed_apps_apres"] = r.json()
 
     return report
+
+
+def test_send(to: str) -> dict:
+    """Teste l'envoi via l'API avec le token du serveur : un TEMPLATE (hello_world)
+    ET un TEXTE LIBRE. Compare les deux pour isoler l'origine d'un refus.
+    """
+    url = f"{GRAPH_API}/{config.WHATSAPP_PHONE_ID}/messages"
+    headers = {**_auth_headers(), "Content-Type": "application/json"}
+    result: dict = {"to": to}
+    with httpx.Client(timeout=25, headers=headers) as client:
+        # 1) Template hello_world (business-initiated, comme le curl de Meta)
+        tmpl = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "template",
+            "template": {"name": "hello_world", "language": {"code": "en_US"}},
+        }
+        r = client.post(url, json=tmpl)
+        result["template_hello_world"] = {"status": r.status_code, "reponse": r.json()}
+
+        # 2) Texte libre (comme notre bot ; nécessite la fenêtre de 24 h ouverte)
+        txt = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "text",
+            "text": {"body": "Test texte libre depuis l'API Effi-Market ✅"},
+        }
+        r = client.post(url, json=txt)
+        result["texte_libre"] = {"status": r.status_code, "reponse": r.json()}
+    return result

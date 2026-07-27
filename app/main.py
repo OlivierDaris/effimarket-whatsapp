@@ -85,6 +85,24 @@ def admin_diag(request: Request):
     return report
 
 
+@app.get("/admin/testsend")
+def admin_testsend(request: Request):
+    """Teste l'envoi (template + texte libre). Protégé par ?key=<verify_token>.
+
+    Exemple : /admin/testsend?key=...&to=33752565659
+    """
+    params = request.query_params
+    if params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    to = params.get("to", "").strip()
+    if not to:
+        return {"erreur": "Fournir ?to=<numero international sans +>"}
+    try:
+        return whatsapp.test_send(to)
+    except Exception as e:
+        return {"erreur": str(e)}
+
+
 @app.get("/webhook")
 def verify_webhook(request: Request):
     """Handshake Meta : renvoyer le hub.challenge si le verify_token correspond."""
