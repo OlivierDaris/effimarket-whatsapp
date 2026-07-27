@@ -68,6 +68,23 @@ def ping():
     return Response(content="ok", media_type="text/plain")
 
 
+@app.get("/admin/diag")
+def admin_diag(request: Request):
+    """Diagnostic de la liaison Meta. Protégé par ?key=<verify_token>.
+
+    Exemple : /admin/diag?key=...&waba=<WHATSAPP_BUSINESS_ACCOUNT_ID>
+    Vérifie et, si besoin, abonne le compte WhatsApp Business à l'application.
+    """
+    params = request.query_params
+    if params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    try:
+        report = whatsapp.diagnose(params.get("waba", "").strip())
+    except Exception as e:
+        return {"erreur": str(e)}
+    return report
+
+
 @app.get("/webhook")
 def verify_webhook(request: Request):
     """Handshake Meta : renvoyer le hub.challenge si le verify_token correspond."""
