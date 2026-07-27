@@ -71,20 +71,18 @@ def diagnose(waba_id: str) -> dict:
             report["erreur"] = "Fournir ?waba=<WHATSAPP_BUSINESS_ACCOUNT_ID>"
             return report
 
-        # 2) La WABA est-elle abonnée à cette app ?
+        # 2) Quelles apps sont abonnées à cette WABA ?
         r = client.get(f"{GRAPH_API}/{waba_id}/subscribed_apps")
         avant = r.json()
         report["subscribed_apps_avant"] = avant
 
-        deja = bool(avant.get("data"))
-        report["etait_deja_abonnee"] = deja
+        # 3) Abonner NOTRE app (celle du token). Idempotent : la présence d'autres
+        #    apps (ex : l'app de test 1P de Meta) ne veut PAS dire que la nôtre l'est.
+        r = client.post(f"{GRAPH_API}/{waba_id}/subscribed_apps")
+        report["action_abonnement"] = {"status": r.status_code, "reponse": r.json()}
 
-        if not deja:
-            # 3) Tenter d'abonner la WABA à l'app
-            r = client.post(f"{GRAPH_API}/{waba_id}/subscribed_apps")
-            report["action_abonnement"] = {"status": r.status_code, "reponse": r.json()}
-            # 4) Revérifier
-            r = client.get(f"{GRAPH_API}/{waba_id}/subscribed_apps")
-            report["subscribed_apps_apres"] = r.json()
+        # 4) Revérifier
+        r = client.get(f"{GRAPH_API}/{waba_id}/subscribed_apps")
+        report["subscribed_apps_apres"] = r.json()
 
     return report
