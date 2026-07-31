@@ -84,11 +84,22 @@ class Product:
         return line
 
 
+def _norm_link(url: str) -> str:
+    """Normalise un lien pour comparaison (sans espaces, sans '/' final)."""
+    return str(url).strip().rstrip("/")
+
+
 class Catalog:
     def __init__(self, products: list[Product], columns: dict[str, str], source: Path):
         self.products = products
         self.columns = columns          # mapping champ interne -> colonne réelle
         self.source = source
+        # Index pour retrouver un produit à partir de son lien.
+        self._by_link = {_norm_link(p.url): p for p in products if p.url}
+
+    def by_link(self, url: str) -> Optional[Product]:
+        """Retrouve un produit à partir de son lien (ou None)."""
+        return self._by_link.get(_norm_link(url))
 
     # -- chargement ------------------------------------------------------------
     @classmethod

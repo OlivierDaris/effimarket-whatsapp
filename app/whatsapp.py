@@ -49,6 +49,32 @@ def send_text(to: str, body: str) -> None:
         resp.raise_for_status()
 
 
+def send_image(to: str, image_url: str, caption: str = "") -> None:
+    """Envoie une image (par URL) avec une légende. Bascule en MOCK si non configuré."""
+    caption = caption[:1024]  # limite WhatsApp pour une légende
+    if not is_configured():
+        print(f"[MOCK WhatsApp IMAGE → {to}] {image_url}\n{caption}\n")
+        return
+
+    url = f"{GRAPH_API}/{config.WHATSAPP_PHONE_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {config.WHATSAPP_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": to,
+        "type": "image",
+        "image": {"link": image_url, "caption": caption},
+    }
+    with httpx.Client(timeout=20) as client:
+        resp = client.post(url, headers=headers, json=payload)
+        if resp.status_code >= 400:
+            print(f"[WhatsApp IMAGE ERREUR {resp.status_code}] {resp.text}")
+        resp.raise_for_status()
+
+
 def _auth_headers() -> dict:
     return {"Authorization": f"Bearer {config.WHATSAPP_TOKEN}"}
 

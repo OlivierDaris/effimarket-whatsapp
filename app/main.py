@@ -16,10 +16,13 @@ from collections import deque
 
 from fastapi import BackgroundTasks, FastAPI, Request, Response
 
-from app import config, whatsapp
+from app import config, product_image, whatsapp
 from app.ai import get_provider
 from app.catalog import Catalog
 from app.conversations import ConversationStore
+
+# Marqueur émis par l'IA pour signaler les produits à afficher en photos.
+PRODUCTS_MARKER = "###PRODUITS###"
 
 app = FastAPI(title="Effi-Market WhatsApp Bot")
 
@@ -133,19 +136,65 @@ def verify_webhook(request: Request):
     return Response(content="Verification échouée", status_code=403)
 
 
+def _safe_send_text(sender: str, body: str) -> None:
+    try:
+        whatsapp.send_text(sender, body)
+    except Exception as e:
+        print(f"[ENVOI ÉCHOUÉ vers {sender}] {e}")
+
+
+def _product_caption(product) -> str:
+    """Légende d'une fiche produit (sous la photo)."""
+    lines = [f"*{product.name}*"]
+    if product.price:
+        lines.append(f"💰 {product.price}")
+    if product.url:
+        lines.append(f"🔗 {product.url}")
+    return "\n".join(lines)
+
+
+def _send_products(sender: str, links: list[str]) -> int:
+    """Envoie une photo (ou une fiche texte en repli) pour chaque produit. Renvoie le nb envoyé."""
+    sent = 0
+    for link in links[:3]:
+        product = catalog.by_link(link)
+        if product is None:
+            continue
+        caption = _product_caption(product)
+        image = product_image.get_image(product.url)
+        try:
+            if image:
+                whatsapp.send_image(sender, image, caption)
+            else:
+                whatsapp.send_text(sender, caption)  # repli si pas de photo
+            sent += 1
+        except Exception as e:
+            print(f"[ENVOI produit échoué] {e}")
+            _safe_send_text(sender, caption)  # dernier repli : la fiche en texte
+    return sent
+
+
 def _handle_message(sender: str, text: str) -> None:
     """Génère la réponse de l'IA et l'envoie. Exécuté en tâche de fond."""
     try:
         answer = store.reply(sender, text)
     except Exception as e:
         print(f"[IA ERREUR] {e}")
-        answer = "Désolé, un souci technique est survenu. Réessayez dans un instant 🙏"
-    # L'envoi peut échouer (token, numéro non autorisé…) : on le rattrape ici pour
-    # garder un log lisible, sans laisser remonter une pile d'appels illisible.
-    try:
-        whatsapp.send_text(sender, answer)
-    except Exception as e:
-        print(f"[ENVOI ÉCHOUÉ vers {sender}] {e}")
+        _safe_send_text(sender, "Désolé, un souci technique est survenu. Réessayez dans un instant 🙏")
+        return
+
+    # Réponse avec produits : intro en texte + une photo par produit.
+    if PRODUCTS_MARKER in answer:
+        intro, _, rest = answer.partition(PRODUCTS_MARKER)
+        intro = intro.strip()
+        links = [l.strip() for l in rest.split("|") if l.strip()]
+        if intro:
+            _safe_send_text(sender, intro)
+        sent = _send_products(sender, links)
+        if sent == 0 and not intro:
+            _safe_send_text(sender, "Désolé, je n'ai pas pu afficher ces produits. Pouvez-vous reformuler ?")
+    else:
+        _safe_send_text(sender, answer)
 
 
 @app.post("/webhook")
