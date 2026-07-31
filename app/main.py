@@ -85,6 +85,24 @@ def admin_diag(request: Request):
     return report
 
 
+@app.get("/admin/testimage")
+def admin_testimage(request: Request):
+    """Teste l'extraction de la photo d'un produit. Protégé par ?key=<verify_token>.
+
+    Exemple : /admin/testimage?key=...&url=https://effi-market.com/produit/xxx/
+    """
+    from app import product_image
+
+    params = request.query_params
+    if params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    url = params.get("url", "").strip()
+    if not url:
+        # à défaut, teste le premier produit du catalogue qui a un lien
+        url = next((p.url for p in catalog.products if p.url), "")
+    return {"produit": url, "image": product_image.get_image(url)}
+
+
 @app.get("/admin/testsend")
 def admin_testsend(request: Request):
     """Teste l'envoi (template + texte libre). Protégé par ?key=<verify_token>.
