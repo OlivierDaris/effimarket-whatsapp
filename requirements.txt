@@ -6,7 +6,8 @@ python-dotenv>=1.0     # chargement du .env
 truststore>=0.9        # correctif SSL Windows (magasin de certificats OS)
 
 # --- Étape 2 : IA (moteur interchangeable) ---
-groq>=0.11               # Groq (gratuit, Llama 3.3) — moteur par défaut
+openai>=1.40             # OpenAI (payant, fiable)
+groq>=0.11               # Groq (gratuit, Llama 3.3)
 google-genai>=1.0        # Gemini (alternative, si facturation activée)
 
 # --- Étape 3 : serveur webhook WhatsApp ---

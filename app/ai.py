@@ -97,18 +97,22 @@ class AIProvider(Protocol):
     def reply(self, chat, user_message: str) -> str: ...
 
 
-# --- Groq (défaut, gratuit) ---------------------------------------------------
-class GroqProvider:
-    """API compatible OpenAI : on gère nous-mêmes la boucle d'appel d'outil."""
+# --- Base commune aux API au format OpenAI (Groq, OpenAI…) -------------------
+class _OpenAICompatProvider:
+    """Gère la boucle d'appel d'outil pour toute API au format OpenAI.
 
-    def __init__(self, catalog: Catalog, api_key: str, model_name: str):
-        if not api_key:
-            raise ValueError("GROQ_API_KEY manquante dans le .env")
-        from groq import Groq
+    Groq et OpenAI partagent exactement la même interface `chat.completions` ;
+    seul le client (et le modèle) change. Les sous-classes ne font que créer
+    le bon client.
+    """
 
+    # Nb max de messages conservés (hors prompt système) pour limiter coût/latence.
+    MAX_HISTORY = 24
+
+    def __init__(self, catalog: Catalog, client, model_name: str):
         self.catalog = catalog
+        self.client = client
         self.model_name = model_name
-        self.client = Groq(api_key=api_key)
         self.tools = [
             {
                 "type": "function",
@@ -125,9 +129,6 @@ class GroqProvider:
                 },
             }
         ]
-
-    # Nb max de messages conservés (hors prompt système) pour limiter coût/latence.
-    MAX_HISTORY = 24
 
     def new_chat(self) -> list[dict]:
         """Une conversation = la liste des messages, démarrée par le prompt système."""
@@ -195,6 +196,26 @@ class GroqProvider:
         return "Désolé, je n'ai pas réussi à traiter votre demande. Pouvez-vous reformuler ?"
 
 
+# --- Groq (gratuit, limité) --------------------------------------------------
+class GroqProvider(_OpenAICompatProvider):
+    def __init__(self, catalog: Catalog, api_key: str, model_name: str):
+        if not api_key:
+            raise ValueError("GROQ_API_KEY manquante dans le .env")
+        from groq import Groq
+
+        super().__init__(catalog, Groq(api_key=api_key), model_name)
+
+
+# --- OpenAI (payant, fiable, sans limite quotidienne bloquante) --------------
+class OpenAIProvider(_OpenAICompatProvider):
+    def __init__(self, catalog: Catalog, api_key: str, model_name: str):
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY manquante dans le .env")
+        from openai import OpenAI
+
+        super().__init__(catalog, OpenAI(api_key=api_key), model_name)
+
+
 # --- Gemini (option, si facturation activée) ---------------------------------
 class GeminiProvider:
     def __init__(self, catalog: Catalog, api_key: str, model_name: str):
@@ -231,10 +252,12 @@ class GeminiProvider:
 
 def get_provider(catalog: Catalog) -> AIProvider:
     """Fabrique le moteur IA selon la configuration (.env : AI_PROVIDER)."""
+    if config.AI_PROVIDER == "openai":
+        return OpenAIProvider(catalog, config.OPENAI_API_KEY, config.OPENAI_MODEL)
     if config.AI_PROVIDER == "groq":
         return GroqProvider(catalog, config.GROQ_API_KEY, config.GROQ_MODEL)
     if config.AI_PROVIDER == "gemini":
         return GeminiProvider(catalog, config.GEMINI_API_KEY, config.GEMINI_MODEL)
     raise ValueError(
-        f"AI_PROVIDER inconnu : '{config.AI_PROVIDER}'. Valeurs : 'groq', 'gemini'."
+        f"AI_PROVIDER inconnu : '{config.AI_PROVIDER}'. Valeurs : 'openai', 'groq', 'gemini'."
     )
