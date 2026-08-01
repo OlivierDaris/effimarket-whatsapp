@@ -24,6 +24,10 @@ from app.ai import AIProvider
 # Mots (message entier, normalisé) qui réinitialisent la conversation.
 RESET_KEYWORDS = {"recommencer", "reset", "restart", "menu", "annuler"}
 
+# Nb max de messages (tours user/assistant) gardés en mémoire, pour limiter
+# coût et latence. Toujours pair : les tours sont ajoutés par paire.
+MAX_HISTORY_MESSAGES = 20
+
 
 @dataclass
 class _Session:
@@ -74,7 +78,13 @@ class ConversationStore:
         # Sérialise les messages d'un même utilisateur (pas ceux des autres).
         with self._lock_for(user_id):
             sess = self._get_session(user_id)
+            # `sess.chat` est un historique NEUTRE (user/assistant en texte) que
+            # le provider lit sans le modifier ; on y ajoute les tours nous-mêmes.
             answer = self.provider.reply(sess.chat, message)
+            sess.chat.append({"role": "user", "content": message})
+            sess.chat.append({"role": "assistant", "content": answer})
+            if len(sess.chat) > MAX_HISTORY_MESSAGES:
+                del sess.chat[:-MAX_HISTORY_MESSAGES]
             sess.last_activity = time.time()
             return answer
 

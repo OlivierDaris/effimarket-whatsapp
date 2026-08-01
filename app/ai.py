@@ -91,23 +91,35 @@ def run_search(catalog: Catalog, requete: str) -> str:
 
 
 class AIProvider(Protocol):
-    """Interface commune à tous les moteurs IA."""
+    """Interface commune à tous les moteurs IA.
 
-    def new_chat(self): ...
-    def reply(self, chat, user_message: str) -> str: ...
+    L'HISTORIQUE est NEUTRE : une liste de messages {"role": "user"/"assistant",
+    "content": "<texte>"} — indépendante du fournisseur. Chaque provider le
+    convertit dans son propre format à chaque appel et NE LE MODIFIE PAS.
+    C'est ce qui permet la bascule automatique : n'importe quel moteur peut
+    reprendre le fil, quel que soit celui qui a répondu au tour précédent.
+    """
+
+    label: str
+
+    def new_chat(self) -> list: ...
+    def reply(self, history: list, user_message: str) -> str: ...
+
+
+def _neutral(history: list) -> list:
+    """Copie défensive de l'historique neutre (user/assistant en texte)."""
+    return [{"role": h["role"], "content": h["content"]} for h in history]
 
 
 # --- Base commune aux API au format OpenAI (Groq, OpenAI…) -------------------
 class _OpenAICompatProvider:
-    """Gère la boucle d'appel d'outil pour toute API au format OpenAI.
+    """Boucle d'appel d'outil pour toute API au format OpenAI (Groq, OpenAI).
 
-    Groq et OpenAI partagent exactement la même interface `chat.completions` ;
-    seul le client (et le modèle) change. Les sous-classes ne font que créer
-    le bon client.
+    Ne modifie pas l'historique neutre : il construit une liste de messages
+    locale à chaque appel et renvoie seulement le texte final.
     """
 
-    # Nb max de messages conservés (hors prompt système) pour limiter coût/latence.
-    MAX_HISTORY = 24
+    label = "openai-compat"
 
     def __init__(self, catalog: Catalog, client, model_name: str):
         self.catalog = catalog
@@ -130,35 +142,18 @@ class _OpenAICompatProvider:
             }
         ]
 
-    def new_chat(self) -> list[dict]:
-        """Une conversation = la liste des messages, démarrée par le prompt système."""
-        return [{"role": "system", "content": SYSTEM_PROMPT}]
+    def new_chat(self) -> list:
+        return []
 
-    def _trim(self, chat: list[dict]) -> None:
-        """Raccourcit l'historique en place, sans casser une séquence d'outil.
+    def reply(self, history: list, user_message: str) -> str:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages.extend(_neutral(history))
+        messages.append({"role": "user", "content": user_message})
 
-        Appelé quand `chat` est dans un état propre (se termine par un message
-        assistant textuel). On garde le prompt système + les derniers messages,
-        et on s'assure que le premier message conservé est bien un 'user'
-        (sinon un 'tool'/'assistant' orphelin ferait planter l'API).
-        """
-        system, rest = chat[0], chat[1:]
-        if len(rest) <= self.MAX_HISTORY:
-            return
-        kept = rest[-self.MAX_HISTORY:]
-        while kept and kept[0]["role"] != "user":
-            kept.pop(0)
-        chat[:] = [system, *kept]
-
-    def reply(self, chat: list[dict], user_message: str) -> str:
-        self._trim(chat)  # état propre avant d'ajouter le nouveau message
-        chat.append({"role": "user", "content": user_message})
-
-        # Boucle : tant que l'IA veut appeler l'outil, on l'exécute et on relance.
         for _ in range(6):  # garde-fou anti-boucle infinie
             resp = self.client.chat.completions.create(
                 model=self.model_name,
-                messages=chat,
+                messages=messages,
                 tools=self.tools,
                 tool_choice="auto",
                 temperature=0.3,
@@ -166,12 +161,9 @@ class _OpenAICompatProvider:
             msg = resp.choices[0].message
 
             if not msg.tool_calls:
-                text = (msg.content or "").strip()
-                chat.append({"role": "assistant", "content": text})
-                return text
+                return (msg.content or "").strip()
 
-            # L'IA demande une ou plusieurs recherches.
-            chat.append(
+            messages.append(
                 {
                     "role": "assistant",
                     "content": msg.content or "",
@@ -191,73 +183,161 @@ class _OpenAICompatProvider:
                 except json.JSONDecodeError:
                     args = {}
                 result = run_search(self.catalog, args.get("requete", ""))
-                chat.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": result})
 
         return "Désolé, je n'ai pas réussi à traiter votre demande. Pouvez-vous reformuler ?"
 
 
 # --- Groq (gratuit, limité) --------------------------------------------------
 class GroqProvider(_OpenAICompatProvider):
+    label = "Groq"
+
     def __init__(self, catalog: Catalog, api_key: str, model_name: str):
         if not api_key:
-            raise ValueError("GROQ_API_KEY manquante dans le .env")
+            raise ValueError("GROQ_API_KEY manquante")
         from groq import Groq
 
         super().__init__(catalog, Groq(api_key=api_key), model_name)
 
 
-# --- OpenAI (payant, fiable, sans limite quotidienne bloquante) --------------
+# --- OpenAI (payant, fiable) -------------------------------------------------
 class OpenAIProvider(_OpenAICompatProvider):
+    label = "OpenAI"
+
     def __init__(self, catalog: Catalog, api_key: str, model_name: str):
         if not api_key:
-            raise ValueError("OPENAI_API_KEY manquante dans le .env")
+            raise ValueError("OPENAI_API_KEY manquante")
         from openai import OpenAI
 
         super().__init__(catalog, OpenAI(api_key=api_key), model_name)
 
 
-# --- Gemini (option, si facturation activée) ---------------------------------
-class GeminiProvider:
+# --- Claude / Anthropic (payant) ---------------------------------------------
+class AnthropicProvider:
+    """Format Messages d'Anthropic : le prompt système est séparé, et les
+    appels d'outil utilisent des blocs `tool_use` / `tool_result`.
+    """
+
+    label = "Claude"
+
     def __init__(self, catalog: Catalog, api_key: str, model_name: str):
         if not api_key:
-            raise ValueError("GEMINI_API_KEY manquante dans le .env")
-        from google import genai
-        from google.genai import types
+            raise ValueError("ANTHROPIC_API_KEY manquante")
+        from anthropic import Anthropic
 
         self.catalog = catalog
         self.model_name = model_name
-        self.client = genai.Client(api_key=api_key)
+        self.client = Anthropic(api_key=api_key)
+        self.tools = [
+            {
+                "name": TOOL_NAME,
+                "description": TOOL_DESCRIPTION,
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "requete": {"type": "string", "description": TOOL_PARAM_DESCRIPTION}
+                    },
+                    "required": ["requete"],
+                },
+            }
+        ]
 
-        def rechercher_produits(requete: str) -> str:
-            """Recherche des produits dans le catalogue Effi-Market.
+    def new_chat(self) -> list:
+        return []
 
-            Args:
-                requete: mots-clés du produit à chercher, en français.
-            """
-            return run_search(self.catalog, requete)
+    def reply(self, history: list, user_message: str) -> str:
+        messages = _neutral(history)
+        messages.append({"role": "user", "content": user_message})
 
-        self._gen_config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            tools=[rechercher_produits],
-            temperature=0.3,
-        )
+        for _ in range(6):
+            resp = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+                tools=self.tools,
+            )
+            if resp.stop_reason != "tool_use":
+                return "".join(b.text for b in resp.content if b.type == "text").strip()
 
-    def new_chat(self):
-        return self.client.chats.create(model=self.model_name, config=self._gen_config)
+            # L'IA demande une ou plusieurs recherches.
+            messages.append({"role": "assistant", "content": resp.content})
+            tool_results = []
+            for b in resp.content:
+                if b.type == "tool_use":
+                    requete = b.input.get("requete", "") if isinstance(b.input, dict) else ""
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": b.id,
+                            "content": run_search(self.catalog, requete),
+                        }
+                    )
+            messages.append({"role": "user", "content": tool_results})
 
-    def reply(self, chat, user_message: str) -> str:
-        response = chat.send_message(user_message)
-        return (response.text or "").strip()
+        return "Désolé, je n'ai pas réussi à traiter votre demande. Pouvez-vous reformuler ?"
+
+
+# --- Bascule automatique (fallback) ------------------------------------------
+class FallbackProvider:
+    """Essaie les moteurs dans l'ordre de priorité ; si l'un est indisponible
+    (limite atteinte, panne, clé invalide…), passe automatiquement au suivant.
+    """
+
+    label = "fallback"
+
+    def __init__(self, providers: list):
+        if not providers:
+            raise ValueError("Aucun moteur IA disponible pour la bascule.")
+        self.providers = providers
+
+    def new_chat(self) -> list:
+        return []
+
+    def reply(self, history: list, user_message: str) -> str:
+        last_err: Exception | None = None
+        for p in self.providers:
+            try:
+                return p.reply(history, user_message)
+            except Exception as e:  # limite atteinte, panne réseau, clé HS…
+                last_err = e
+                print(f"[IA bascule] {p.label} indisponible → moteur suivant. ({e})")
+        raise RuntimeError(f"Tous les moteurs IA sont indisponibles. Dernière erreur : {last_err}")
+
+
+# Ordre de priorité et fabrique de chaque moteur (uniquement si sa clé existe).
+_PROVIDER_ORDER = ["groq", "openai", "anthropic"]
+
+
+def _make_provider(name: str, catalog: Catalog):
+    if name == "groq" and config.GROQ_API_KEY:
+        return GroqProvider(catalog, config.GROQ_API_KEY, config.GROQ_MODEL)
+    if name == "openai" and config.OPENAI_API_KEY:
+        return OpenAIProvider(catalog, config.OPENAI_API_KEY, config.OPENAI_MODEL)
+    if name == "anthropic" and config.ANTHROPIC_API_KEY:
+        return AnthropicProvider(catalog, config.ANTHROPIC_API_KEY, config.ANTHROPIC_MODEL)
+    return None
 
 
 def get_provider(catalog: Catalog) -> AIProvider:
-    """Fabrique le moteur IA selon la configuration (.env : AI_PROVIDER)."""
-    if config.AI_PROVIDER == "openai":
-        return OpenAIProvider(catalog, config.OPENAI_API_KEY, config.OPENAI_MODEL)
-    if config.AI_PROVIDER == "groq":
-        return GroqProvider(catalog, config.GROQ_API_KEY, config.GROQ_MODEL)
-    if config.AI_PROVIDER == "gemini":
-        return GeminiProvider(catalog, config.GEMINI_API_KEY, config.GEMINI_MODEL)
-    raise ValueError(
-        f"AI_PROVIDER inconnu : '{config.AI_PROVIDER}'. Valeurs : 'openai', 'groq', 'gemini'."
-    )
+    """Fabrique le moteur IA selon AI_PROVIDER.
+
+    "auto" (défaut) : chaîne de bascule Groq → OpenAI → Claude, en n'incluant
+    que les moteurs dont la clé est renseignée. Sinon, un moteur unique imposé.
+    """
+    prov = config.AI_PROVIDER
+    if prov in ("auto", "fallback"):
+        chain = [p for p in (_make_provider(n, catalog) for n in _PROVIDER_ORDER) if p]
+        if not chain:
+            raise ValueError(
+                "Aucune clé IA configurée (GROQ_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY)."
+            )
+        return chain[0] if len(chain) == 1 else FallbackProvider(chain)
+
+    single = _make_provider(prov, catalog)
+    if single is None:
+        raise ValueError(
+            f"AI_PROVIDER='{prov}' inconnu ou sans clé. "
+            "Valeurs : 'auto', 'groq', 'openai', 'anthropic'."
+        )
+    return single

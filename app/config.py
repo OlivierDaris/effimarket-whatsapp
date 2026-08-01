@@ -44,13 +44,18 @@ def _path(value: str) -> Path:
 CATALOG_PATH = _path(os.getenv("CATALOG_PATH", "data/sample_catalog.csv"))
 
 # --- IA ---
-AI_PROVIDER = os.getenv("AI_PROVIDER", "groq").lower()
-# OpenAI (payant, fiable)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-# Groq (gratuit, par défaut)
+# "auto" = bascule automatique Groq → OpenAI → Claude (selon les clés présentes).
+# Sinon un moteur imposé : "groq", "openai" ou "anthropic".
+AI_PROVIDER = os.getenv("AI_PROVIDER", "auto").lower()
+# Groq (gratuit, prioritaire)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+# OpenAI (payant, 2e choix)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+# Anthropic / Claude (payant, 3e choix)
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-opus-4-8")
 # Gemini (alternative)
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
