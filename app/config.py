@@ -43,6 +43,9 @@ def _path(value: str) -> Path:
 # --- Catalogue ---
 CATALOG_PATH = _path(os.getenv("CATALOG_PATH", "data/sample_catalog.csv"))
 
+# --- Statistiques (tableau de bord) ---
+STATS_PATH = _path(os.getenv("STATS_PATH", "data/stats.json"))
+
 # --- IA ---
 # "auto" = bascule automatique Groq → OpenAI → Claude (selon les clés présentes).
 # Sinon un moteur imposé : "groq", "openai" ou "anthropic".

@@ -15,11 +15,13 @@ from __future__ import annotations
 from collections import deque
 
 from fastapi import BackgroundTasks, FastAPI, Request, Response
+from fastapi.responses import HTMLResponse
 
-from app import config, product_image, whatsapp
+from app import config, dashboard, product_image, whatsapp
 from app.ai import get_provider
 from app.catalog import Catalog
 from app.conversations import ConversationStore
+from app.stats import Stats
 
 # Marqueur émis par l'IA pour signaler les produits à afficher en photos.
 PRODUCTS_MARKER = "###PRODUITS###"
@@ -30,6 +32,7 @@ app = FastAPI(title="Effi-Market WhatsApp Bot")
 catalog = Catalog.load(config.CATALOG_PATH)
 provider = get_provider(catalog)
 store = ConversationStore(provider)
+stats = Stats(config.STATS_PATH)
 
 # Dédup : Meta réémet parfois le même message ; on ignore les IDs déjà traités.
 # Borné : on ne garde que les N derniers IDs (au-delà, un doublon si vieux est
@@ -124,6 +127,18 @@ def admin_testsend(request: Request):
         return {"erreur": str(e)}
 
 
+@app.get("/dashboard")
+def dashboard_page(request: Request):
+    """Tableau de bord d'activité (lu depuis data/stats.json).
+
+    Protégé par ?key=<verify_token> : ouvrez
+    https://.../dashboard?key=effimarket_verify_2026
+    """
+    if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    return HTMLResponse(content=dashboard.render(stats.summary()))
+
+
 @app.get("/webhook")
 def verify_webhook(request: Request):
     """Handshake Meta : renvoyer le hub.challenge si le verify_token correspond."""
@@ -156,10 +171,12 @@ def _product_caption(product) -> str:
 def _send_products(sender: str, links: list[str]) -> int:
     """Envoie une photo (ou une fiche texte en repli) pour chaque produit. Renvoie le nb envoyé."""
     sent = 0
+    shown: list[str] = []
     for link in links[:3]:
         product = catalog.by_link(link)
         if product is None:
             continue
+        shown.append(product.name)
         caption = _product_caption(product)
         image = product_image.get_image(product.url)
         try:
@@ -171,11 +188,13 @@ def _send_products(sender: str, links: list[str]) -> int:
         except Exception as e:
             print(f"[ENVOI produit échoué] {e}")
             _safe_send_text(sender, caption)  # dernier repli : la fiche en texte
+    stats.record_products(shown)
     return sent
 
 
 def _handle_message(sender: str, text: str) -> None:
     """Génère la réponse de l'IA et l'envoie. Exécuté en tâche de fond."""
+    stats.record_message(sender, text)
     try:
         answer = store.reply(sender, text)
     except Exception as e:
