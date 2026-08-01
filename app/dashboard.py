@@ -1,7 +1,9 @@
-"""Rendu HTML du tableau de bord (design Material 3, servi par le serveur).
+"""Rendu HTML du tableau de bord + de la page Admin/Réglages (Material 3, dark).
 
-La maquette est un gabarit statique ; ici on la remplit avec les vraies
-statistiques (résumé) et on câble les boutons Sauvegarder / Charger.
+Les gabarits sont statiques ; on les remplit avec les vraies statistiques et on
+câble les boutons (Sauvegarder / Charger) et les outils. Les fragments dynamiques
+sont des jetons %%...%% remplacés par les fonctions render() — on n'utilise pas
+.format()/f-string sur les gabarits pour ne pas doubler les accolades du CSS.
 """
 from __future__ import annotations
 
@@ -20,14 +22,12 @@ def _fmt_dt(iso: str) -> str:
         return _esc(iso)
 
 
-# Gabarit (repris de la maquette). Les fragments dynamiques sont des jetons
-# %%...%% remplacés par render() — on n'utilise pas .format()/f-string pour ne
-# pas avoir à doubler les nombreuses accolades du CSS/Tailwind.
-_TEMPLATE = """<!DOCTYPE html>
+# En-tête commun (doctype + <head> avec Tailwind CDN, polices, config, style).
+_HEAD = """<!DOCTYPE html>
 <html class="dark" lang="fr"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>Effi-Market Bot — Tableau de bord</title>
+<title>%%TITLE%%</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Hanken+Grotesk:wght@600;700&family=Geist:wght@500&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
@@ -36,22 +36,20 @@ _TEMPLATE = """<!DOCTYPE html>
     darkMode: "class",
     theme: { extend: {
       colors: {
-        "on-surface": "#e4e1e6", "inverse-on-surface": "#303033", "primary": "#d0bcff",
-        "secondary": "#ccbeff", "on-surface-variant": "#cbc3d7",
-        "surface-container-low": "#1b1b1e", "on-primary": "#3c0091",
-        "background": "#131316", "outline-variant": "#494454", "error-container": "#93000a",
-        "surface-container-lowest": "#0e0e11", "on-background": "#e4e1e6", "surface": "#131316",
-        "surface-container-high": "#2a2a2d", "on-error": "#690005", "outline": "#958ea0",
-        "error": "#ffb4ab", "surface-container-highest": "#353438", "surface-container": "#1f1f22",
-        "surface-variant": "#353438", "secondary-container": "#4a3d7c",
-        "on-secondary-container": "#baabf3", "on-error-container": "#ffdad6", "tertiary": "#c4c1fb"
+        "on-surface": "#e4e1e6", "primary": "#d0bcff", "secondary": "#ccbeff",
+        "on-surface-variant": "#cbc3d7", "surface-container-low": "#1b1b1e",
+        "on-primary": "#3c0091", "background": "#131316", "outline-variant": "#494454",
+        "error-container": "#93000a", "surface-container-lowest": "#0e0e11",
+        "surface": "#131316", "surface-container-high": "#2a2a2d", "outline": "#958ea0",
+        "error": "#ffb4ab", "surface-container": "#1f1f22", "surface-variant": "#353438",
+        "secondary-container": "#4a3d7c", "on-secondary-container": "#baabf3",
+        "on-error-container": "#ffdad6", "tertiary": "#c4c1fb"
       },
       borderRadius: { "DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem" },
-      spacing: { "base":"8px","margin-mobile":"20px","margin-desktop":"48px","container-max":"1280px","gutter":"24px" },
+      spacing: { "base":"8px","container-max":"1280px","gutter":"24px" },
       fontFamily: {
-        "headline-lg-mobile":["Hanken Grotesk"],"body-lg":["Inter"],"headline-md":["Hanken Grotesk"],
-        "label-md":["Geist"],"body-md":["Inter"],"headline-lg":["Hanken Grotesk"],"body-sm":["Inter"],
-        "label-sm":["Geist"],"headline-sm":["Hanken Grotesk"]
+        "body-md":["Inter"],"body-sm":["Inter"],"label-md":["Geist"],"label-sm":["Geist"],
+        "headline-md":["Hanken Grotesk"],"headline-sm":["Hanken Grotesk"]
       },
       fontSize: {
         "headline-md":["32px",{"lineHeight":"40px","fontWeight":"600"}],
@@ -70,16 +68,14 @@ _TEMPLATE = """<!DOCTYPE html>
   body { background-color:#131316; font-family:'Inter',sans-serif; color:#e4e1e6; min-height:100dvh; }
   .bento-grid { display:grid; grid-template-columns:repeat(12,1fr); gap:24px; }
   .card-shadow { box-shadow:0 4px 20px rgba(0,0,0,0.2); }
+  .fld { background:#2a2a2d; color:#e4e1e6; border:1px solid rgba(73,68,84,.5); border-radius:.5rem; padding:.55rem .8rem; outline:none; }
+  .fld:focus { border-color:#d0bcff; }
 </style>
 </head>
-<body class="bg-background text-on-surface pb-24 md:pb-0">
+"""
 
-<header class="bg-surface-container-low border-b border-white/5 fixed top-0 w-full z-50 flex justify-between items-center px-5 h-16">
-  <div class="flex items-center gap-3">
-    <span class="material-symbols-outlined text-primary">smart_toy</span>
-    <h1 class="font-headline-sm text-headline-sm font-bold text-primary">Effi-Market Bot</h1>
-  </div>
-  <form action="/dashboard/import" method="post" enctype="multipart/form-data">
+# Bouton "Charger" (upload) réutilisé dans les deux pages.
+_UPLOAD = """<form action="/dashboard/import" method="post" enctype="multipart/form-data">
     <input type="hidden" name="key" value="%%K%%"/>
     <label class="bg-primary text-on-primary px-4 py-2 rounded-xl flex items-center gap-2 hover:bg-primary/90 transition-all active:scale-95 duration-100 cursor-pointer">
       <span class="material-symbols-outlined text-[20px]">upload_file</span>
@@ -87,7 +83,25 @@ _TEMPLATE = """<!DOCTYPE html>
       <input type="file" name="file" accept=".json,application/json" class="hidden"
              onchange="if(this.files.length &amp;&amp; confirm('Remplacer les donnees actuelles par ce fichier ?')) this.form.submit(); else this.value='';"/>
     </label>
-  </form>
+  </form>"""
+
+
+# ---------------------------------------------------------------------------
+# TABLEAU DE BORD
+# ---------------------------------------------------------------------------
+_BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
+
+<header class="bg-surface-container-low border-b border-white/5 fixed top-0 w-full z-50 flex justify-between items-center px-5 h-16">
+  <div class="flex items-center gap-3">
+    <span class="material-symbols-outlined text-primary">smart_toy</span>
+    <h1 class="font-headline-sm text-headline-sm font-bold text-primary">Effi-Market Bot</h1>
+  </div>
+  <div class="flex items-center gap-3">
+    <a href="/admin?key=%%K%%" title="Réglages / Admin" class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface-variant hover:text-primary hover:bg-white/5 transition-all">
+      <span class="material-symbols-outlined">settings</span>
+    </a>
+    %%UPLOAD%%
+  </div>
 </header>
 
 <main class="max-w-container-max mx-auto p-gutter space-y-gutter mt-20 md:pl-28">
@@ -105,117 +119,144 @@ _TEMPLATE = """<!DOCTYPE html>
   <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
     <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-32">
       <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Messages reçus</span>
-      <div class="flex items-end justify-between">
-        <span class="text-[32px] font-bold text-primary">%%MSG%%</span>
-        <span class="material-symbols-outlined text-primary opacity-20 text-[32px]">chat_bubble</span>
-      </div>
+      <div class="flex items-end justify-between"><span class="text-[32px] font-bold text-primary">%%MSG%%</span>
+        <span class="material-symbols-outlined text-primary opacity-20 text-[32px]">chat_bubble</span></div>
     </div>
     <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-32">
       <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Clients uniques</span>
-      <div class="flex items-end justify-between">
-        <span class="text-[32px] font-bold text-primary">%%USERS%%</span>
-        <span class="material-symbols-outlined text-primary opacity-20 text-[32px]">group</span>
-      </div>
+      <div class="flex items-end justify-between"><span class="text-[32px] font-bold text-primary">%%USERS%%</span>
+        <span class="material-symbols-outlined text-primary opacity-20 text-[32px]">group</span></div>
     </div>
     <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-32">
       <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Jours actifs</span>
-      <div class="flex items-end justify-between">
-        <span class="text-[32px] font-bold text-primary">%%DAYS%%</span>
-        <span class="material-symbols-outlined text-primary opacity-20 text-[32px]">event_available</span>
-      </div>
+      <div class="flex items-end justify-between"><span class="text-[32px] font-bold text-primary">%%DAYS%%</span>
+        <span class="material-symbols-outlined text-primary opacity-20 text-[32px]">event_available</span></div>
     </div>
   </div>
 
   <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-    <div class="flex items-center gap-2 mb-6">
-      <span class="material-symbols-outlined text-primary">bar_chart</span>
-      <h3 class="font-headline-sm text-headline-sm">Messages par jour</h3>
-    </div>
+    <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">bar_chart</span>
+      <h3 class="font-headline-sm text-headline-sm">Messages par jour</h3></div>
     <div class="h-64 flex items-end gap-6 md:gap-10 px-2 md:px-6 border-b border-outline-variant/30 pb-2 overflow-x-auto">%%BARS%%</div>
   </section>
 
   <div class="bento-grid">
     <section class="col-span-12 md:col-span-6 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6">
-        <span class="material-symbols-outlined text-primary">search</span>
-        <h3 class="font-headline-sm text-headline-sm">Recherches les plus fréquentes</h3>
-      </div>
-      <div class="overflow-x-auto"><table class="w-full">
-        <thead><tr class="border-b border-outline-variant/20">
-          <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Recherche</th>
-          <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th>
-        </tr></thead>
-        <tbody class="divide-y divide-outline-variant/10">%%QUERIES%%</tbody>
-      </table></div>
+      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">search</span>
+        <h3 class="font-headline-sm text-headline-sm">Recherches les plus fréquentes</h3></div>
+      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Recherche</th>
+        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th></tr></thead>
+        <tbody class="divide-y divide-outline-variant/10">%%QUERIES%%</tbody></table></div>
     </section>
-
     <section class="col-span-12 md:col-span-6 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6">
-        <span class="material-symbols-outlined text-primary">shopping_cart</span>
-        <h3 class="font-headline-sm text-headline-sm">Produits les plus proposés</h3>
-      </div>
-      <div class="overflow-x-auto"><table class="w-full">
-        <thead><tr class="border-b border-outline-variant/20">
-          <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Produit</th>
-          <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th>
-        </tr></thead>
-        <tbody class="divide-y divide-outline-variant/10">%%PRODUCTS%%</tbody>
-      </table></div>
+      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">shopping_cart</span>
+        <h3 class="font-headline-sm text-headline-sm">Produits les plus proposés</h3></div>
+      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Produit</th>
+        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th></tr></thead>
+        <tbody class="divide-y divide-outline-variant/10">%%PRODUCTS%%</tbody></table></div>
     </section>
-
     <section class="col-span-12 md:col-span-8 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6">
-        <span class="material-symbols-outlined text-primary">contact_phone</span>
-        <h3 class="font-headline-sm text-headline-sm">Numéros qui ont contacté le bot</h3>
-      </div>
-      <div class="overflow-x-auto"><table class="w-full">
-        <thead><tr class="border-b border-outline-variant/20">
-          <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Numéro</th>
-          <th class="text-center py-3 font-label-sm text-on-surface-variant uppercase">Messages</th>
-          <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Dernier</th>
-        </tr></thead>
-        <tbody class="divide-y divide-outline-variant/10">%%CLIENTS%%</tbody>
-      </table></div>
+      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">contact_phone</span>
+        <h3 class="font-headline-sm text-headline-sm">Numéros qui ont contacté le bot</h3></div>
+      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Numéro</th>
+        <th class="text-center py-3 font-label-sm text-on-surface-variant uppercase">Messages</th>
+        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Dernier</th></tr></thead>
+        <tbody class="divide-y divide-outline-variant/10">%%CLIENTS%%</tbody></table></div>
     </section>
-
     <section class="col-span-12 md:col-span-4 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6">
-        <span class="material-symbols-outlined text-error">search_off</span>
-        <h3 class="font-headline-sm text-headline-sm">Recherches sans résultat</h3>
-      </div>
+      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-error">search_off</span>
+        <h3 class="font-headline-sm text-headline-sm">Recherches sans résultat</h3></div>
       <div class="space-y-2">%%FAILED%%</div>
     </section>
   </div>
 
   <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-    <div class="flex items-center gap-2 mb-6">
-      <span class="material-symbols-outlined text-primary">forum</span>
-      <h3 class="font-headline-sm text-headline-sm">Derniers messages</h3>
-    </div>
-    <div class="overflow-x-auto"><table class="w-full">
-      <thead><tr class="border-b border-outline-variant/20">
-        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Quand</th>
-        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">De</th>
-        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Message</th>
-      </tr></thead>
-      <tbody class="divide-y divide-outline-variant/10">%%RECENT%%</tbody>
-    </table></div>
+    <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">forum</span>
+      <h3 class="font-headline-sm text-headline-sm">Derniers messages</h3></div>
+    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Quand</th>
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">De</th>
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Message</th></tr></thead>
+      <tbody class="divide-y divide-outline-variant/10">%%RECENT%%</tbody></table></div>
   </section>
 
-  <p class="text-center text-on-surface-variant font-label-sm pt-2">Données lues depuis data/stats.json · sur l'offre gratuite, remises à zéro au redéploiement (utilisez Sauvegarder / Charger).</p>
+  <p class="text-center text-on-surface-variant font-label-sm pt-2">Données lues depuis data/stats.json · remises à zéro au redéploiement (voir ⚙️ Réglages pour Sauvegarder / Charger).</p>
 </main>
 
-<aside class="hidden md:flex fixed left-0 top-16 bottom-0 w-20 flex-col items-center py-6 gap-6 bg-surface-container-low border-r border-white/5 z-40">
-  <span class="w-12 h-12 flex items-center justify-center bg-primary text-on-primary rounded-xl shadow-lg">
-    <span class="material-symbols-outlined filled-icon">dashboard</span>
-  </span>
-  <span class="w-12 h-12 flex items-center justify-center text-on-surface-variant"><span class="material-symbols-outlined">analytics</span></span>
-  <span class="w-12 h-12 flex items-center justify-center text-on-surface-variant"><span class="material-symbols-outlined">group</span></span>
+<aside class="hidden md:flex fixed left-0 top-16 bottom-0 w-20 flex-col items-center py-6 gap-4 bg-surface-container-low border-r border-white/5 z-40">
+  <span class="w-12 h-12 flex items-center justify-center bg-primary text-on-primary rounded-xl shadow-lg"><span class="material-symbols-outlined filled-icon">dashboard</span></span>
+  <a href="/admin?key=%%K%%" title="Réglages / Admin" class="w-12 h-12 flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-white/5 rounded-xl transition-all mt-auto"><span class="material-symbols-outlined">settings</span></a>
 </aside>
 
 <script>
   document.addEventListener('DOMContentLoaded',()=>{const b=document.querySelector('.bg-primary.rounded-t-lg');if(b){b.classList.add('animate-pulse');setTimeout(()=>b.classList.remove('animate-pulse'),2500);}});
 </script>
+</body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# PAGE ADMIN / RÉGLAGES
+# ---------------------------------------------------------------------------
+_BODY_ADMIN = """<body class="bg-background text-on-surface pb-10">
+
+<header class="bg-surface-container-low border-b border-white/5 fixed top-0 w-full z-50 flex justify-between items-center px-5 h-16">
+  <div class="flex items-center gap-3">
+    <span class="material-symbols-outlined text-primary">settings</span>
+    <h1 class="font-headline-sm text-headline-sm font-bold text-primary">Réglages — Admin</h1>
+  </div>
+  <a href="/dashboard?key=%%K%%" class="flex items-center gap-2 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-xl font-label-md text-label-md hover:brightness-110 active:scale-95 transition-all">
+    <span class="material-symbols-outlined text-[20px]">arrow_back</span> Tableau de bord
+  </a>
+</header>
+
+<main class="max-w-3xl mx-auto p-gutter space-y-gutter mt-20">
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-primary">database</span>
+      <h3 class="font-headline-sm text-headline-sm">Sauvegarde de la base</h3></div>
+    <p class="font-body-md text-on-surface-variant mb-5">Sur l'offre gratuite, le fichier <code>data/stats.json</code> est remis à zéro à chaque redéploiement. Pensez à <b>Sauvegarder</b> avant, puis <b>Charger</b> après.</p>
+    <div class="flex flex-wrap items-center gap-3">
+      <a href="/dashboard/export?key=%%K%%" class="bg-secondary-container text-on-secondary-container px-4 py-2 rounded-xl flex items-center gap-2 font-label-md text-label-md hover:brightness-110 active:scale-95 transition-all">
+        <span class="material-symbols-outlined text-[20px]">save</span> Sauvegarder (télécharger)
+      </a>
+      %%UPLOAD%%
+    </div>
+  </section>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-primary">dashboard</span>
+      <h3 class="font-headline-sm text-headline-sm">Liens rapides</h3></div>
+    <div class="flex flex-wrap gap-3">
+      <a href="/dashboard?key=%%K%%" class="fld hover:border-primary flex items-center gap-2 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">insights</span> Tableau de bord</a>
+      <a href="/" target="_blank" class="fld hover:border-primary flex items-center gap-2 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">favorite</span> État du service</a>
+      <a href="/admin/testimage?key=%%K%%" target="_blank" class="fld hover:border-primary flex items-center gap-2 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">image</span> Tester une photo produit</a>
+    </div>
+  </section>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-primary">build</span>
+      <h3 class="font-headline-sm text-headline-sm">Outils WhatsApp</h3></div>
+
+    <p class="font-label-sm text-on-surface-variant uppercase mb-2">Diagnostic Meta</p>
+    <form action="/admin/diag" method="get" target="_blank" class="flex flex-col sm:flex-row gap-2 mb-6">
+      <input type="hidden" name="key" value="%%K%%"/>
+      <input name="waba" placeholder="ID du compte WhatsApp Business" class="fld flex-1 font-body-md"/>
+      <button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-md text-label-md hover:bg-primary/90 active:scale-95 transition-all">Diagnostiquer</button>
+    </form>
+
+    <p class="font-label-sm text-on-surface-variant uppercase mb-2">Test d'envoi (template + texte)</p>
+    <form action="/admin/testsend" method="get" target="_blank" class="flex flex-col sm:flex-row gap-2">
+      <input type="hidden" name="key" value="%%K%%"/>
+      <input name="to" placeholder="Numéro international sans + (ex: 33612345678)" class="fld flex-1 font-body-md"/>
+      <button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-md text-label-md hover:bg-primary/90 active:scale-95 transition-all">Envoyer un test</button>
+    </form>
+  </section>
+
+  <p class="text-center text-on-surface-variant font-label-sm pt-2">Page réservée — accès protégé par la clé.</p>
+</main>
 </body></html>"""
 
 
@@ -273,8 +314,10 @@ def render(summary: dict, key: str = "") -> str:
         for r in summary["recent"]
     ) or '<tr><td colspan="3" class="py-4 font-body-md text-on-surface-variant">Aucun message pour l\'instant.</td></tr>'
 
-    out = _TEMPLATE
+    out = _HEAD + _BODY_DASHBOARD
     for token, value in {
+        "%%TITLE%%": "Effi-Market Bot — Tableau de bord",
+        "%%UPLOAD%%": _UPLOAD,
         "%%K%%": k,
         "%%STARTED%%": _fmt_dt(summary["started_at"]),
         "%%MSG%%": _esc(summary["messages_total"]),
@@ -286,6 +329,19 @@ def render(summary: dict, key: str = "") -> str:
         "%%CLIENTS%%": clients,
         "%%FAILED%%": failed,
         "%%RECENT%%": recent,
+    }.items():
+        out = out.replace(token, value)
+    return out
+
+
+def render_admin(key: str = "") -> str:
+    """Page Admin/Réglages : sauvegarde/restauration + outils."""
+    k = _esc(key)
+    out = _HEAD + _BODY_ADMIN
+    for token, value in {
+        "%%TITLE%%": "Effi-Market Bot — Réglages",
+        "%%UPLOAD%%": _UPLOAD,
+        "%%K%%": k,
     }.items():
         out = out.replace(token, value)
     return out

@@ -142,6 +142,14 @@ def dashboard_page(request: Request):
     return HTMLResponse(content=dashboard.render(stats.summary(), config.WHATSAPP_VERIFY_TOKEN))
 
 
+@app.get("/admin")
+def admin_page(request: Request):
+    """Page Admin/Réglages : sauvegarde/restauration + outils. ?key=<verify_token>."""
+    if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    return HTMLResponse(content=dashboard.render_admin(config.WHATSAPP_VERIFY_TOKEN))
+
+
 @app.get("/dashboard/export")
 def dashboard_export(request: Request):
     """Télécharge data/stats.json (sauvegarde avant un déploiement)."""
