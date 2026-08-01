@@ -251,8 +251,36 @@ _BODY_ADMIN = """<body class="bg-background text-on-surface pb-10">
     </form>
   </section>
 
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary">terminal</span>
+        <h3 class="font-headline-sm text-headline-sm">Logs du serveur</h3></div>
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-1.5 text-on-surface-variant font-label-sm cursor-pointer"><input type="checkbox" id="autoref" checked class="accent-primary"/> Auto</label>
+        <button onclick="loadLogs()" class="fld hover:border-primary flex items-center gap-1 font-label-sm"><span class="material-symbols-outlined text-[18px]">refresh</span></button>
+      </div>
+    </div>
+    <pre id="logs" class="bg-surface-container-lowest border border-outline-variant/20 rounded-lg p-4 h-80 overflow-auto text-[12px] leading-5 whitespace-pre-wrap font-mono text-on-surface-variant">Chargement…</pre>
+    <p class="text-on-surface-variant font-label-sm mt-2">Depuis le dernier démarrage du serveur (les vieux logs disparaissent).</p>
+  </section>
+
   <p class="text-center text-on-surface-variant font-label-sm pt-2">Page réservée — accès protégé par la clé.</p>
 </main>
+<script>
+  const _K = "%%K%%";
+  async function loadLogs(){
+    try{
+      const r = await fetch('/admin/logs?key='+encodeURIComponent(_K));
+      const t = await r.text();
+      const el = document.getElementById('logs');
+      const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+      el.textContent = t || '(aucun log pour l\\'instant)';
+      if(bottom) el.scrollTop = el.scrollHeight;
+    }catch(e){}
+  }
+  loadLogs();
+  setInterval(()=>{ if(document.getElementById('autoref').checked) loadLogs(); }, 3000);
+</script>
 </body></html>"""
 
 

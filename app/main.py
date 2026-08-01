@@ -152,6 +152,16 @@ def admin_page(request: Request):
     )
 
 
+@app.get("/admin/logs")
+def admin_logs(request: Request):
+    """Renvoie les derniers logs du serveur (texte brut). ?key=<verify_token>."""
+    if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    from app import logbuf
+
+    return Response(content=logbuf.text(400), media_type="text/plain; charset=utf-8")
+
+
 @app.get("/dashboard/export")
 def dashboard_export(request: Request):
     """Télécharge data/stats.json (sauvegarde avant un déploiement)."""

@@ -15,6 +15,13 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# Capture des logs en mémoire (pour l'affichage dans la page admin).
+try:
+    from app import logbuf
+    logbuf.install()
+except Exception:
+    pass
+
 # --- Correctif SSL Windows ---------------------------------------------------
 # Sur Windows, un antivirus/proxy peut inspecter le HTTPS avec son propre
 # certificat racine, que Python ne connaît pas (erreur CERTIFICATE_VERIFY_FAILED).
