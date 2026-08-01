@@ -68,9 +68,19 @@ TOOL_PARAM_DESCRIPTION = (
 )
 
 
+# Hook optionnel appelé à chaque recherche : on_search(requete: str, found: bool).
+# Branché par main.py sur les statistiques (recherches sans résultat).
+on_search = None
+
+
 def run_search(catalog: Catalog, requete: str) -> str:
     """Exécute la recherche et renvoie un JSON que l'IA saura lire. Logique partagée."""
     results = catalog.search(requete, limit=5)
+    if on_search is not None:
+        try:
+            on_search(requete, bool(results))
+        except Exception:
+            pass
     if not results:
         return json.dumps(
             {"produits": [], "message": f"Aucun résultat pour « {requete} »"},

@@ -38,6 +38,7 @@ class Stats:
         data.setdefault("by_day", {})      # "YYYY-MM-DD" -> nb de messages
         data.setdefault("queries", {})     # texte recherché -> nb
         data.setdefault("products", {})    # nom produit affiché -> nb
+        data.setdefault("failed_searches", {})  # recherche sans résultat -> nb
         data.setdefault("recent", [])      # derniers messages [{t, from, text}]
         return data
 
@@ -72,6 +73,18 @@ class Stats:
             d["recent"] = d["recent"][:50]
             self._save()
 
+    def record_search(self, query: str, found: bool) -> None:
+        """Enregistre une recherche : on ne garde que celles SANS résultat."""
+        if found:
+            return
+        q = (query or "").strip().lower()[:80]
+        if not q:
+            return
+        with self._lock:
+            fs = self._data["failed_searches"]
+            fs[q] = fs.get(q, 0) + 1
+            self._save()
+
     def record_products(self, names: list[str]) -> None:
         if not names:
             return
@@ -88,6 +101,15 @@ class Stats:
             by_day = dict(sorted(d["by_day"].items()))
             top_queries = sorted(d["queries"].items(), key=lambda kv: kv[1], reverse=True)[:10]
             top_products = sorted(d["products"].items(), key=lambda kv: kv[1], reverse=True)[:10]
+            failed = sorted(d["failed_searches"].items(), key=lambda kv: kv[1], reverse=True)[:15]
+            users = sorted(
+                (
+                    {"num": num, "count": info.get("count", 0), "last": info.get("last")}
+                    for num, info in d["users"].items()
+                ),
+                key=lambda u: u["last"] or "",
+                reverse=True,
+            )
             return {
                 "messages_total": d["messages_total"],
                 "users_total": len(d["users"]),
@@ -95,5 +117,7 @@ class Stats:
                 "by_day": by_day,
                 "top_queries": top_queries,
                 "top_products": top_products,
+                "failed_searches": failed,
+                "users": users,
                 "recent": d["recent"][:20],
             }

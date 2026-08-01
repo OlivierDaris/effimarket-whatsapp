@@ -17,12 +17,6 @@ def _fmt_dt(iso: str) -> str:
         return _esc(iso)
 
 
-def _mask(num: str) -> str:
-    """Masque partiellement un numéro (vie privée)."""
-    s = str(num)
-    return s if len(s) <= 5 else s[:4] + "•••" + s[-2:]
-
-
 def render(summary: dict) -> str:
     by_day = summary["by_day"]
     max_day = max(by_day.values(), default=1) or 1
@@ -40,10 +34,18 @@ def render(summary: dict) -> str:
         )
 
     recent = "".join(
-        f"<tr><td class='mono'>{_fmt_dt(r['t'])}</td><td class='mono'>{_esc(_mask(r['from']))}</td>"
+        f"<tr><td class='mono'>{_fmt_dt(r['t'])}</td><td class='mono'>{_esc(r['from'])}</td>"
         f"<td>{_esc(r['text'])}</td></tr>"
         for r in summary["recent"]
     ) or '<tr><td colspan="3" class="muted">Aucun message pour l\'instant.</td></tr>'
+
+    clients = "".join(
+        f"<tr><td class='mono'>{_esc(u['num'])}</td><td class='num'>{_esc(u['count'])}</td>"
+        f"<td class='mono'>{_fmt_dt(u['last']) if u['last'] else '—'}</td></tr>"
+        for u in summary["users"]
+    ) or '<tr><td colspan="3" class="muted">Aucun client pour l\'instant.</td></tr>'
+
+    failed = rows(summary["failed_searches"], "Aucune — tout a été trouvé 🎉")
 
     return f"""<!doctype html>
 <html lang="fr"><head>
@@ -109,6 +111,19 @@ def render(summary: dict) -> str:
       <h2>🛒 Produits les plus proposés</h2>
       <table><thead><tr><th>Produit</th><th class="num">Nb</th></tr></thead>
       <tbody>{rows(summary["top_products"], "Aucun produit affiché.")}</tbody></table>
+    </section>
+  </div>
+
+  <div class="grid2">
+    <section>
+      <h2>📇 Numéros qui ont contacté le bot</h2>
+      <table><thead><tr><th>Numéro</th><th class="num">Messages</th><th>Dernier</th></tr></thead>
+      <tbody>{clients}</tbody></table>
+    </section>
+    <section>
+      <h2>❓ Recherches sans résultat</h2>
+      <table><thead><tr><th>Recherche</th><th class="num">Nb</th></tr></thead>
+      <tbody>{failed}</tbody></table>
     </section>
   </div>
 

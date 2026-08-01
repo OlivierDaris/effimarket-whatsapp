@@ -17,8 +17,7 @@ from collections import deque
 from fastapi import BackgroundTasks, FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
 
-from app import config, dashboard, product_image, whatsapp
-from app.ai import get_provider
+from app import ai, config, dashboard, product_image, whatsapp
 from app.catalog import Catalog
 from app.conversations import ConversationStore
 from app.stats import Stats
@@ -30,9 +29,11 @@ app = FastAPI(title="Effi-Market WhatsApp Bot")
 
 # Chargé une fois au démarrage.
 catalog = Catalog.load(config.CATALOG_PATH)
-provider = get_provider(catalog)
+provider = ai.get_provider(catalog)
 store = ConversationStore(provider)
 stats = Stats(config.STATS_PATH)
+# Enregistre les recherches sans résultat dans les statistiques.
+ai.on_search = stats.record_search
 
 # Dédup : Meta réémet parfois le même message ; on ignore les IDs déjà traités.
 # Borné : on ne garde que les N derniers IDs (au-delà, un doublon si vieux est
