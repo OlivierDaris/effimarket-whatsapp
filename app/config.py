@@ -46,6 +46,9 @@ CATALOG_PATH = _path(os.getenv("CATALOG_PATH", "data/sample_catalog.csv"))
 # --- Statistiques (tableau de bord) ---
 STATS_PATH = _path(os.getenv("STATS_PATH", "data/stats.json"))
 
+# ID du compte WhatsApp Business (pour le diagnostic pré-rempli côté admin).
+WHATSAPP_WABA_ID = os.getenv("WHATSAPP_WABA_ID", "1814251306404280")
+
 # --- IA ---
 # "auto" = bascule automatique Groq → OpenAI → Claude (selon les clés présentes).
 # Sinon un moteur imposé : "groq", "openai" ou "anthropic".

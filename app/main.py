@@ -147,7 +147,9 @@ def admin_page(request: Request):
     """Page Admin/Réglages : sauvegarde/restauration + outils. ?key=<verify_token>."""
     if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
         return Response(content="Accès refusé", status_code=403)
-    return HTMLResponse(content=dashboard.render_admin(config.WHATSAPP_VERIFY_TOKEN))
+    return HTMLResponse(
+        content=dashboard.render_admin(config.WHATSAPP_VERIFY_TOKEN, config.WHATSAPP_WABA_ID)
+    )
 
 
 @app.get("/dashboard/export")

@@ -234,9 +234,12 @@ _BODY_ADMIN = """<body class="bg-background text-on-surface pb-10">
       <h3 class="font-headline-sm text-headline-sm">Outils WhatsApp</h3></div>
 
     <p class="font-label-sm text-on-surface-variant uppercase mb-2">Diagnostic Meta</p>
+    <a href="/admin/diag?key=%%K%%&amp;waba=%%WABA%%" target="_blank" class="fld hover:border-primary inline-flex items-center gap-2 font-body-md mb-3">
+      <span class="material-symbols-outlined text-[20px] text-primary">bolt</span> Diagnostic direct (WABA pré-rempli)
+    </a>
     <form action="/admin/diag" method="get" target="_blank" class="flex flex-col sm:flex-row gap-2 mb-6">
       <input type="hidden" name="key" value="%%K%%"/>
-      <input name="waba" placeholder="ID du compte WhatsApp Business" class="fld flex-1 font-body-md"/>
+      <input name="waba" value="%%WABA%%" placeholder="ID du compte WhatsApp Business" class="fld flex-1 font-body-md"/>
       <button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-md text-label-md hover:bg-primary/90 active:scale-95 transition-all">Diagnostiquer</button>
     </form>
 
@@ -326,13 +329,14 @@ def render(summary: dict, key: str = "") -> str:
     return out
 
 
-def render_admin(key: str = "") -> str:
+def render_admin(key: str = "", waba: str = "") -> str:
     """Page Admin/Réglages : sauvegarde/restauration + outils."""
     k = _esc(key)
     out = _HEAD + _BODY_ADMIN
     for token, value in {
         "%%TITLE%%": "Effi-Market Bot — Réglages",
         "%%UPLOAD%%": _UPLOAD,
+        "%%WABA%%": _esc(waba),
         "%%K%%": k,
     }.items():
         out = out.replace(token, value)
