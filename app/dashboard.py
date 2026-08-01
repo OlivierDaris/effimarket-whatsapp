@@ -96,24 +96,17 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
     <span class="material-symbols-outlined text-primary">smart_toy</span>
     <h1 class="font-headline-sm text-headline-sm font-bold text-primary">Effi-Market Bot</h1>
   </div>
-  <div class="flex items-center gap-3">
-    <a href="/admin?key=%%K%%" title="Réglages / Admin" class="w-10 h-10 flex items-center justify-center rounded-xl text-on-surface-variant hover:text-primary hover:bg-white/5 transition-all">
-      <span class="material-symbols-outlined">settings</span>
-    </a>
-    %%UPLOAD%%
-  </div>
+  <a href="/admin?key=%%K%%" title="Réglages / Admin" class="flex items-center gap-2 px-4 py-2 rounded-xl text-on-surface-variant hover:text-primary hover:bg-white/5 transition-all">
+    <span class="material-symbols-outlined">settings</span>
+    <span class="font-label-md text-label-md hidden sm:inline">Réglages</span>
+  </a>
 </header>
 
 <main class="max-w-container-max mx-auto p-gutter space-y-gutter mt-20 md:pl-28">
 
-  <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-    <div>
-      <h2 class="font-headline-md text-headline-md text-primary">Tableau de bord</h2>
-      <p class="font-body-md text-on-surface-variant">Depuis le %%STARTED%%</p>
-    </div>
-    <a href="/dashboard/export?key=%%K%%" class="flex items-center gap-2 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-lg font-label-md text-label-md transition-all hover:brightness-110 active:scale-95">
-      <span class="material-symbols-outlined text-[18px]">save</span> Sauvegarder
-    </a>
+  <div>
+    <h2 class="font-headline-md text-headline-md text-primary">Tableau de bord</h2>
+    <p class="font-body-md text-on-surface-variant">Depuis le %%STARTED%%</p>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
@@ -317,7 +310,6 @@ def render(summary: dict, key: str = "") -> str:
     out = _HEAD + _BODY_DASHBOARD
     for token, value in {
         "%%TITLE%%": "Effi-Market Bot — Tableau de bord",
-        "%%UPLOAD%%": _UPLOAD,
         "%%K%%": k,
         "%%STARTED%%": _fmt_dt(summary["started_at"]),
         "%%MSG%%": _esc(summary["messages_total"]),
