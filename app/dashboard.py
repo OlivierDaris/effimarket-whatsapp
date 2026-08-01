@@ -17,7 +17,8 @@ def _fmt_dt(iso: str) -> str:
         return _esc(iso)
 
 
-def render(summary: dict) -> str:
+def render(summary: dict, key: str = "") -> str:
+    k = _esc(key)
     by_day = summary["by_day"]
     max_day = max(by_day.values(), default=1) or 1
     bars = "".join(
@@ -63,6 +64,13 @@ def render(summary: dict) -> str:
   h1 {{ font-size:1.5rem; margin:0; }}
   .muted {{ color:var(--soft); }}
   .since {{ font-size:.8rem; color:var(--soft); font-family:ui-monospace,monospace; }}
+  .toolbar {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }}
+  .btn {{ display:inline-block; background:var(--accent); color:#fff; text-decoration:none; border:0;
+          border-radius:6px; padding:9px 14px; font-size:.85rem; font-weight:600; cursor:pointer; }}
+  .btn:hover {{ filter:brightness(1.06); }}
+  .btn-form {{ display:flex; gap:8px; align-items:center; background:var(--accent-soft);
+               border:1px solid var(--line); border-radius:6px; padding:6px 8px; }}
+  .btn-form input[type=file] {{ font-size:.75rem; max-width:160px; }}
   .cards {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:26px; }}
   .card {{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }}
   .card .k {{ font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; color:var(--soft); }}
@@ -86,8 +94,19 @@ def render(summary: dict) -> str:
 </style></head>
 <body><div class="wrap">
   <header>
-    <h1>🛍️ Tableau de bord — Effi-Market Bot</h1>
-    <span class="since">depuis le {_fmt_dt(summary["started_at"])}</span>
+    <div>
+      <h1>🛍️ Tableau de bord — Effi-Market Bot</h1>
+      <span class="since">depuis le {_fmt_dt(summary["started_at"])}</span>
+    </div>
+    <div class="toolbar">
+      <a class="btn" href="/dashboard/export?key={k}" title="Télécharger data/stats.json">💾 Sauvegarder</a>
+      <form class="btn-form" action="/dashboard/import" method="post" enctype="multipart/form-data"
+            onsubmit="return confirm('Remplacer les données actuelles par ce fichier ?');">
+        <input type="hidden" name="key" value="{k}">
+        <input type="file" name="file" accept=".json,application/json" required>
+        <button class="btn" type="submit">📂 Charger</button>
+      </form>
+    </div>
   </header>
 
   <div class="cards">

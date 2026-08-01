@@ -14,8 +14,10 @@ from __future__ import annotations
 
 from collections import deque
 
-from fastapi import BackgroundTasks, FastAPI, Request, Response
-from fastapi.responses import HTMLResponse
+import json
+
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, Response, UploadFile
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 from app import ai, config, dashboard, product_image, whatsapp
 from app.catalog import Catalog
@@ -137,7 +139,36 @@ def dashboard_page(request: Request):
     """
     if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
         return Response(content="Accès refusé", status_code=403)
-    return HTMLResponse(content=dashboard.render(stats.summary()))
+    return HTMLResponse(content=dashboard.render(stats.summary(), config.WHATSAPP_VERIFY_TOKEN))
+
+
+@app.get("/dashboard/export")
+def dashboard_export(request: Request):
+    """Télécharge data/stats.json (sauvegarde avant un déploiement)."""
+    if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    return Response(
+        content=stats.raw_json(),
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=effimarket-stats.json"},
+    )
+
+
+@app.post("/dashboard/import")
+async def dashboard_import(key: str = Form(""), file: UploadFile = File(...)):
+    """Recharge les données depuis un JSON importé (restauration après déploiement)."""
+    if key != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    back = f"/dashboard?key={config.WHATSAPP_VERIFY_TOKEN}"
+    try:
+        raw = await file.read()
+        stats.replace(json.loads(raw.decode("utf-8")))
+    except Exception as e:
+        return HTMLResponse(
+            f"<p>Import échoué : {e}</p><p><a href='{back}'>← Retour au tableau de bord</a></p>",
+            status_code=400,
+        )
+    return RedirectResponse(url=back, status_code=303)
 
 
 @app.get("/webhook")

@@ -31,7 +31,13 @@ class Stats:
             data = json.loads(self.path.read_text(encoding="utf-8"))
         except Exception:
             data = {}
-        # valeurs par défaut (robuste si le fichier est partiel)
+        return self._normalize(data)
+
+    @staticmethod
+    def _normalize(data: dict) -> dict:
+        """Complète les champs manquants (robuste si le JSON est partiel/importé)."""
+        if not isinstance(data, dict):
+            data = {}
         data.setdefault("messages_total", 0)
         data.setdefault("started_at", _now().isoformat())
         data.setdefault("users", {})       # numéro -> {count, first, last}
@@ -41,6 +47,19 @@ class Stats:
         data.setdefault("failed_searches", {})  # recherche sans résultat -> nb
         data.setdefault("recent", [])      # derniers messages [{t, from, text}]
         return data
+
+    # -- sauvegarde / restauration (contourne le disque éphémère) --------------
+    def raw_json(self) -> str:
+        """Contenu JSON complet, pour téléchargement (sauvegarde avant déploiement)."""
+        with self._lock:
+            return json.dumps(self._data, ensure_ascii=False, indent=2)
+
+    def replace(self, new_data: dict) -> None:
+        """Remplace toutes les données par un JSON importé (restauration)."""
+        normalized = self._normalize(new_data)
+        with self._lock:
+            self._data = normalized
+            self._save()
 
     def _save(self) -> None:
         try:
