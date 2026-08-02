@@ -42,10 +42,15 @@ class Stats:
         data.setdefault("started_at", _now().isoformat())
         data.setdefault("users", {})       # numéro -> {count, first, last}
         data.setdefault("by_day", {})      # "YYYY-MM-DD" -> nb de messages
+        data.setdefault("by_hour", {})     # "0".."23" -> nb de messages
         data.setdefault("queries", {})     # texte recherché -> nb
-        data.setdefault("products", {})    # nom produit affiché -> nb
+        data.setdefault("products", {})    # nom produit -> {count, url}
         data.setdefault("failed_searches", {})  # recherche sans résultat -> nb
         data.setdefault("recent", [])      # derniers messages [{t, from, text}]
+        # migration : ancien format produits (nom -> int)
+        for name, v in list(data["products"].items()):
+            if not isinstance(v, dict):
+                data["products"][name] = {"count": int(v) if isinstance(v, int) else 0, "url": ""}
         return data
 
     # -- sauvegarde / restauration (contourne le disque éphémère) --------------
@@ -79,6 +84,8 @@ class Stats:
 
             day = now.strftime("%Y-%m-%d")
             d["by_day"][day] = d["by_day"].get(day, 0) + 1
+            hour = str(now.hour)
+            d["by_hour"][hour] = d["by_hour"].get(hour, 0) + 1
 
             u = d["users"].setdefault(sender, {"count": 0, "first": now.isoformat(), "last": None})
             u["count"] += 1
@@ -104,26 +111,53 @@ class Stats:
             fs[q] = fs.get(q, 0) + 1
             self._save()
 
-    def record_products(self, names: list[str]) -> None:
-        if not names:
+    def record_products(self, items: list[tuple[str, str]]) -> None:
+        """items : liste de (nom, lien) des produits proposés."""
+        if not items:
             return
         with self._lock:
-            for n in names:
-                if n:
-                    self._data["products"][n] = self._data["products"].get(n, 0) + 1
+            prods = self._data["products"]
+            for name, url in items:
+                if not name:
+                    continue
+                e = prods.get(name)
+                if not isinstance(e, dict):
+                    e = {"count": 0, "url": ""}
+                    prods[name] = e
+                e["count"] += 1
+                if url and not e.get("url"):
+                    e["url"] = url
             self._save()
+
+    def product_names(self) -> set:
+        """Ensemble des noms de produits déjà proposés (pour les 'jamais proposés')."""
+        with self._lock:
+            return set(self._data["products"].keys())
 
     # -- lecture ---------------------------------------------------------------
     def summary(self) -> dict:
         with self._lock:
             d = self._data
             by_day = dict(sorted(d["by_day"].items()))
+            by_hour = [d["by_hour"].get(str(h), 0) for h in range(24)]
             top_queries = sorted(d["queries"].items(), key=lambda kv: kv[1], reverse=True)[:10]
-            top_products = sorted(d["products"].items(), key=lambda kv: kv[1], reverse=True)[:10]
+            top_products = sorted(
+                (
+                    {"name": n, "count": v.get("count", 0), "url": v.get("url", "")}
+                    for n, v in d["products"].items()
+                ),
+                key=lambda p: p["count"],
+                reverse=True,
+            )[:10]
             failed = sorted(d["failed_searches"].items(), key=lambda kv: kv[1], reverse=True)[:15]
             users = sorted(
                 (
-                    {"num": num, "count": info.get("count", 0), "last": info.get("last")}
+                    {
+                        "num": num,
+                        "count": info.get("count", 0),
+                        "first": info.get("first"),
+                        "last": info.get("last"),
+                    }
                     for num, info in d["users"].items()
                 ),
                 key=lambda u: u["last"] or "",
@@ -134,6 +168,7 @@ class Stats:
                 "users_total": len(d["users"]),
                 "started_at": d["started_at"],
                 "by_day": by_day,
+                "by_hour": by_hour,
                 "top_queries": top_queries,
                 "top_products": top_products,
                 "failed_searches": failed,

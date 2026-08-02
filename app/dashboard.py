@@ -104,9 +104,23 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
 
 <main class="max-w-container-max mx-auto p-gutter space-y-gutter mt-20 md:pl-28">
 
-  <div>
-    <h2 class="font-headline-md text-headline-md text-primary">Tableau de bord</h2>
-    <p class="font-body-md text-on-surface-variant">Depuis le %%STARTED%%</p>
+  <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+    <div>
+      <h2 class="font-headline-md text-headline-md text-primary">Tableau de bord</h2>
+      <p class="font-body-md text-on-surface-variant">Depuis le %%STARTED%%</p>
+    </div>
+    <div class="flex flex-wrap gap-3">
+      <div class="flex items-center gap-2 bg-surface-container-lowest border border-outline-variant/10 rounded-xl px-4 py-2">
+        <span class="material-symbols-outlined text-[20px] text-primary">smart_toy</span>
+        <span class="font-label-sm text-on-surface-variant">IA</span>
+        <span class="font-body-sm font-semibold text-primary">%%STATUS_AI%%</span>
+      </div>
+      <div class="flex items-center gap-2 bg-surface-container-lowest border border-outline-variant/10 rounded-xl px-4 py-2">
+        <span class="material-symbols-outlined text-[20px] text-primary">chat</span>
+        <span class="font-label-sm text-on-surface-variant">WhatsApp</span>
+        <span class="font-body-sm font-semibold text-primary">%%STATUS_WA%%</span>
+      </div>
+    </div>
   </div>
 
   <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
@@ -131,6 +145,13 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
     <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">bar_chart</span>
       <h3 class="font-headline-sm text-headline-sm">Messages par jour</h3></div>
     <div class="h-64 flex items-end gap-6 md:gap-10 px-2 md:px-6 border-b border-outline-variant/30 pb-2 overflow-x-auto">%%BARS%%</div>
+  </section>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">schedule</span>
+      <h3 class="font-headline-sm text-headline-sm">Heures de pointe</h3></div>
+    <div class="h-44 flex items-end gap-1 md:gap-2 px-1 border-b border-outline-variant/30 pb-2 overflow-x-auto">%%HOURBARS%%</div>
+    <p class="text-on-surface-variant font-label-sm mt-2">Messages par heure (0–23 h, UTC).</p>
   </section>
 
   <div class="bento-grid">
@@ -165,6 +186,15 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
       <div class="space-y-2">%%FAILED%%</div>
     </section>
   </div>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary">inventory_2</span>
+        <h3 class="font-headline-sm text-headline-sm">Produits jamais proposés</h3></div>
+      <span class="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-sm">%%NEVERCOUNT%%</span>
+    </div>
+    <ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-8">%%NEVER%%</ul>
+  </section>
 
   <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
     <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">forum</span>
@@ -226,6 +256,7 @@ _BODY_ADMIN = """<body class="bg-background text-on-surface pb-10">
       <a href="/dashboard?key=%%K%%" class="fld hover:border-primary flex items-center gap-2 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">insights</span> Tableau de bord</a>
       <a href="/" target="_blank" class="fld hover:border-primary flex items-center gap-2 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">favorite</span> État du service</a>
       <a href="/admin/testimage?key=%%K%%" target="_blank" class="fld hover:border-primary flex items-center gap-2 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">image</span> Tester une photo produit</a>
+      <a href="/dashboard/export-clients?key=%%K%%" class="fld hover:border-primary flex items-center gap-2 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">download</span> Exporter les clients (CSV)</a>
     </div>
   </section>
 
@@ -299,8 +330,25 @@ def _two_col(items, empty):
     return "".join(_TABLE_ROW.format(label=_esc(k), v=_esc(v)) for k, v in items)
 
 
-def render(summary: dict, key: str = "") -> str:
+def _product_rows(items, empty):
+    if not items:
+        return f'<tr><td colspan="2" class="py-4 font-body-md text-on-surface-variant">{empty}</td></tr>'
+    out = ""
+    for p in items:
+        nm = _esc(p["name"])
+        label = (
+            f'<a href="{_esc(p["url"])}" target="_blank" class="hover:text-primary hover:underline">{nm}</a>'
+            if p.get("url")
+            else nm
+        )
+        out += _TABLE_ROW.format(label=label, v=_esc(p["count"]))
+    return out
+
+
+def render(summary: dict, key: str = "", never: dict | None = None, status: dict | None = None) -> str:
     k = _esc(key)
+    never = never or {"count": 0, "total": 0, "sample": []}
+    status = status or {"ai": "—", "whatsapp": "—"}
     by_day = summary["by_day"]
     max_day = max(by_day.values(), default=1) or 1
 
@@ -315,12 +363,29 @@ def render(summary: dict, key: str = "") -> str:
 
     clients = "".join(
         '<tr class="hover:bg-white/5 transition-colors">'
-        f'<td class="py-4 font-body-md font-semibold text-primary">{_esc(u["num"])}</td>'
+        f'<td class="py-4 font-body-md font-semibold"><a href="https://wa.me/{_esc(u["num"])}" target="_blank" '
+        f'class="text-primary hover:underline inline-flex items-center gap-1">'
+        f'<span class="material-symbols-outlined text-[16px]">chat</span>{_esc(u["num"])}</a></td>'
         f'<td class="py-4 text-center font-body-md">{_esc(u["count"])}</td>'
         f'<td class="py-4 text-right font-body-md text-on-surface-variant">'
         f'{_fmt_dt(u["last"]) if u["last"] else "—"}</td></tr>'
         for u in summary["users"]
     ) or '<tr><td colspan="3" class="py-4 font-body-md text-on-surface-variant">Aucun client pour l\'instant.</td></tr>'
+
+    by_hour = summary["by_hour"]
+    max_h = max(by_hour) or 1
+    hourbars = "".join(
+        f'<div class="flex flex-col items-center gap-1 shrink-0" style="min-width:22px;">'
+        f'<div class="w-3 bg-tertiary rounded-t transition-all" style="height:{max(3, round(v / max_h * 120))}px;" '
+        f'title="{h}h — {v} message(s)"></div>'
+        f'<span class="text-on-surface-variant text-[9px]">{h}</span></div>'
+        for h, v in enumerate(by_hour)
+    )
+
+    never_list = "".join(
+        f'<li class="py-1.5 border-b border-outline-variant/10 font-body-sm text-on-surface-variant">{_esc(n)}</li>'
+        for n in never["sample"]
+    ) or '<li class="py-2 font-body-md text-on-surface-variant">Tous les produits ont été proposés 🎉</li>'
 
     failed = "".join(
         '<div class="flex justify-between items-center p-3 bg-error-container/10 border '
@@ -347,10 +412,15 @@ def render(summary: dict, key: str = "") -> str:
         "%%USERS%%": _esc(summary["users_total"]),
         "%%DAYS%%": _esc(len(by_day)),
         "%%BARS%%": bars,
+        "%%HOURBARS%%": hourbars,
         "%%QUERIES%%": _two_col(summary["top_queries"], "Aucune recherche."),
-        "%%PRODUCTS%%": _two_col(summary["top_products"], "Aucun produit affiché."),
+        "%%PRODUCTS%%": _product_rows(summary["top_products"], "Aucun produit affiché."),
         "%%CLIENTS%%": clients,
         "%%FAILED%%": failed,
+        "%%NEVER%%": never_list,
+        "%%NEVERCOUNT%%": f'{never["count"]} / {never["total"]}',
+        "%%STATUS_AI%%": _esc(status["ai"]),
+        "%%STATUS_WA%%": _esc(status["whatsapp"]),
         "%%RECENT%%": recent,
     }.items():
         out = out.replace(token, value)

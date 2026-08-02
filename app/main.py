@@ -139,7 +139,46 @@ def dashboard_page(request: Request):
     """
     if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
         return Response(content="Accès refusé", status_code=403)
-    return HTMLResponse(content=dashboard.render(stats.summary(), config.WHATSAPP_VERIFY_TOKEN))
+
+    # Produits jamais proposés (trous de mise en avant du catalogue).
+    shown = stats.product_names()
+    never = [p.name for p in catalog.products if p.name not in shown]
+    never_info = {"count": len(never), "total": len(catalog.products), "sample": never[:15]}
+
+    # Statut : moteur(s) IA actif(s) + WhatsApp.
+    if isinstance(provider, ai.FallbackProvider):
+        ai_label = " → ".join(p.label for p in provider.providers)
+    else:
+        ai_label = getattr(provider, "label", config.AI_PROVIDER)
+    status = {
+        "ai": ai_label,
+        "whatsapp": "configuré" if whatsapp.is_configured() else "mode MOCK",
+    }
+
+    return HTMLResponse(
+        content=dashboard.render(stats.summary(), config.WHATSAPP_VERIFY_TOKEN, never_info, status)
+    )
+
+
+@app.get("/dashboard/export-clients")
+def dashboard_export_clients(request: Request):
+    """Exporte la liste des clients en CSV (numéro, messages, premier, dernier)."""
+    if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    import csv
+    import io
+
+    buf = io.StringIO()
+    buf.write("﻿")  # BOM pour Excel (accents)
+    w = csv.writer(buf)
+    w.writerow(["numero", "messages", "premier_contact", "dernier_contact", "lien_whatsapp"])
+    for u in stats.summary()["users"]:
+        w.writerow([u["num"], u["count"], u.get("first") or "", u.get("last") or "", f"https://wa.me/{u['num']}"])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=effimarket-clients.csv"},
+    )
 
 
 @app.get("/admin")
@@ -223,12 +262,12 @@ def _product_caption(product) -> str:
 def _send_products(sender: str, links: list[str]) -> int:
     """Envoie une photo (ou une fiche texte en repli) pour chaque produit. Renvoie le nb envoyé."""
     sent = 0
-    shown: list[str] = []
+    shown: list[tuple[str, str]] = []
     for link in links[:3]:
         product = catalog.by_link(link)
         if product is None:
             continue
-        shown.append(product.name)
+        shown.append((product.name, product.url))
         caption = _product_caption(product)
         image = product_image.get_image(product.url)
         try:
