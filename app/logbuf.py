@@ -9,7 +9,13 @@ from __future__ import annotations
 import sys
 import threading
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
+
+try:
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+except Exception:
+    _PARIS = timezone.utc
 
 _MAX = 600
 _buffer: deque[tuple[str, str]] = deque(maxlen=_MAX)
@@ -29,7 +35,7 @@ class _Tee:
         except Exception:
             pass
         if text:
-            ts = datetime.now().strftime("%H:%M:%S")
+            ts = datetime.now(_PARIS).strftime("%H:%M:%S")
             for line in text.split("\n"):
                 if line.strip():
                     with _lock:

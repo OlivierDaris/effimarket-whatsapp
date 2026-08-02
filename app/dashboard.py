@@ -8,7 +8,13 @@ sont des jetons %%...%% remplacés par les fonctions render() — on n'utilise p
 from __future__ import annotations
 
 import html
-from datetime import datetime
+from datetime import datetime, timezone
+
+try:
+    from zoneinfo import ZoneInfo
+    _PARIS = ZoneInfo("Europe/Paris")
+except Exception:
+    _PARIS = timezone.utc
 
 
 def _esc(x) -> str:
@@ -16,8 +22,12 @@ def _esc(x) -> str:
 
 
 def _fmt_dt(iso: str) -> str:
+    """Formate un horodatage ISO (stocké en UTC) en heure de France."""
     try:
-        return datetime.fromisoformat(iso).strftime("%d/%m %H:%M")
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(_PARIS).strftime("%d/%m %H:%M")
     except Exception:
         return _esc(iso)
 
@@ -166,7 +176,7 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
     <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">schedule</span>
       <h3 class="font-headline-sm text-headline-sm">Heures de pointe</h3></div>
     <div class="h-44 flex items-end gap-1 md:gap-2 px-1 border-b border-outline-variant/30 pb-2 overflow-x-auto">%%HOURBARS%%</div>
-    <p class="text-on-surface-variant font-label-sm mt-2">Messages par heure (0–23 h, UTC).</p>
+    <p class="text-on-surface-variant font-label-sm mt-2">Messages par heure (0–23 h, heure de France).</p>
   </section>
 
   <div class="bento-grid">

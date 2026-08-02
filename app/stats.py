@@ -15,6 +15,12 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+try:
+    from zoneinfo import ZoneInfo
+    PARIS = ZoneInfo("Europe/Paris")
+except Exception:  # repli si la base de fuseaux est absente
+    PARIS = timezone.utc
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -100,9 +106,10 @@ class Stats:
             now = _now()
             d["messages_total"] += 1
 
-            day = now.strftime("%Y-%m-%d")
+            local = now.astimezone(PARIS)  # jours/heures en heure de France
+            day = local.strftime("%Y-%m-%d")
             d["by_day"][day] = d["by_day"].get(day, 0) + 1
-            hour = str(now.hour)
+            hour = str(local.hour)
             d["by_hour"][hour] = d["by_hour"].get(hour, 0) + 1
 
             u = self._user(sender, now.isoformat())
