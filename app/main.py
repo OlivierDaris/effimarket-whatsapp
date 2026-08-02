@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections import deque
 
 import json
+import threading
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -34,8 +35,19 @@ catalog = Catalog.load(config.CATALOG_PATH)
 provider = ai.get_provider(catalog)
 store = ConversationStore(provider)
 stats = Stats(config.STATS_PATH)
-# Enregistre les recherches sans résultat dans les statistiques.
-ai.on_search = stats.record_search
+
+# Numéro du client en cours de traitement (par thread), pour associer une
+# recherche infructueuse à son auteur (zone « À rappeler »).
+_ctx = threading.local()
+
+
+def _on_search(query: str, found: bool) -> None:
+    stats.record_search(query, found)
+    if not found:
+        stats.record_missed(getattr(_ctx, "sender", ""), query)
+
+
+ai.on_search = _on_search
 
 # Dédup : Meta réémet parfois le même message ; on ignore les IDs déjà traités.
 # Borné : on ne garde que les N derniers IDs (au-delà, un doublon si vieux est
@@ -286,6 +298,7 @@ def _send_products(sender: str, links: list[str]) -> int:
 def _handle_message(sender: str, text: str) -> None:
     """Génère la réponse de l'IA et l'envoie. Exécuté en tâche de fond."""
     stats.record_message(sender, text)
+    _ctx.sender = sender  # pour associer une recherche sans résultat à ce client
     try:
         answer = store.reply(sender, text)
     except Exception as e:

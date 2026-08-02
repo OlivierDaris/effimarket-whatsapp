@@ -141,6 +141,21 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
     </div>
   </div>
 
+  <section class="bg-error-container/10 p-6 rounded-xl card-shadow border border-error-container/40">
+    <div class="flex items-center gap-2 mb-4">
+      <span class="material-symbols-outlined text-error">notification_important</span>
+      <h3 class="font-headline-sm text-headline-sm text-error">À rappeler — demandes sans produit trouvé</h3>
+    </div>
+    <div class="overflow-x-auto"><table class="w-full">
+      <thead><tr class="border-b border-error-container/30">
+        <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Quand</th>
+        <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Numéro (cliquer pour rappeler)</th>
+        <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Sa demande</th>
+      </tr></thead>
+      <tbody class="divide-y divide-error-container/20">%%MISSED%%</tbody>
+    </table></div>
+  </section>
+
   <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
     <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">bar_chart</span>
       <h3 class="font-headline-sm text-headline-sm">Messages par jour</h3></div>
@@ -387,6 +402,16 @@ def render(summary: dict, key: str = "", never: dict | None = None, status: dict
         for n in never["sample"]
     ) or '<li class="py-2 font-body-md text-on-surface-variant">Tous les produits ont été proposés 🎉</li>'
 
+    missed = "".join(
+        '<tr class="hover:bg-white/5 transition-colors">'
+        f'<td class="py-3 font-body-sm text-on-surface-variant whitespace-nowrap">{_fmt_dt(mr["t"])}</td>'
+        f'<td class="py-3 font-body-sm whitespace-nowrap"><a href="https://wa.me/{_esc(mr["from"])}" target="_blank" '
+        f'class="text-error font-semibold hover:underline inline-flex items-center gap-1">'
+        f'<span class="material-symbols-outlined text-[16px]">call</span>{_esc(mr["from"])}</a></td>'
+        f'<td class="py-3 font-body-md">{_esc(mr["query"])}</td></tr>'
+        for mr in summary["missed"]
+    ) or '<tr><td colspan="3" class="py-3 font-body-md text-on-surface-variant">Aucune demande non satisfaite 🎉</td></tr>'
+
     failed = "".join(
         '<div class="flex justify-between items-center p-3 bg-error-container/10 border '
         'border-error-container/20 rounded-lg hover:bg-error-container/20 transition-all">'
@@ -417,6 +442,7 @@ def render(summary: dict, key: str = "", never: dict | None = None, status: dict
         "%%PRODUCTS%%": _product_rows(summary["top_products"], "Aucun produit affiché."),
         "%%CLIENTS%%": clients,
         "%%FAILED%%": failed,
+        "%%MISSED%%": missed,
         "%%NEVER%%": never_list,
         "%%NEVERCOUNT%%": f'{never["count"]} / {never["total"]}',
         "%%STATUS_AI%%": _esc(status["ai"]),

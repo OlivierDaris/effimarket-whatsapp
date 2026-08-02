@@ -46,6 +46,7 @@ class Stats:
         data.setdefault("queries", {})     # texte recherché -> nb
         data.setdefault("products", {})    # nom produit -> {count, url}
         data.setdefault("failed_searches", {})  # recherche sans résultat -> nb
+        data.setdefault("missed", [])      # demandes sans produit [{t, from, query}]
         data.setdefault("recent", [])      # derniers messages [{t, from, text}]
         # migration : ancien format produits (nom -> int)
         for name, v in list(data["products"].items()):
@@ -111,6 +112,16 @@ class Stats:
             fs[q] = fs.get(q, 0) + 1
             self._save()
 
+    def record_missed(self, sender: str, query: str) -> None:
+        """Client + demande dont aucun produit n'a été trouvé (zone 'À rappeler')."""
+        q = (query or "").strip()[:120]
+        if not q:
+            return
+        with self._lock:
+            self._data["missed"].insert(0, {"t": _now().isoformat(), "from": sender or "?", "query": q})
+            self._data["missed"] = self._data["missed"][:60]
+            self._save()
+
     def record_products(self, items: list[tuple[str, str]]) -> None:
         """items : liste de (nom, lien) des produits proposés."""
         if not items:
@@ -172,6 +183,7 @@ class Stats:
                 "top_queries": top_queries,
                 "top_products": top_products,
                 "failed_searches": failed,
+                "missed": d["missed"][:30],
                 "users": users,
                 "recent": d["recent"][:20],
             }
