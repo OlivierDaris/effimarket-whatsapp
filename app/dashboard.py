@@ -8,7 +8,7 @@ sont des jetons %%...%% remplacés par les fonctions render() — on n'utilise p
 from __future__ import annotations
 
 import html
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 try:
     from zoneinfo import ZoneInfo
@@ -19,6 +19,20 @@ except Exception:
 
 def _esc(x) -> str:
     return html.escape(str(x))
+
+
+def _shift(dstr: str, days: int) -> str:
+    try:
+        return (datetime.strptime(dstr, "%Y-%m-%d") + timedelta(days=days)).strftime("%Y-%m-%d")
+    except Exception:
+        return dstr
+
+
+def _datelabel(dstr: str) -> str:
+    try:
+        return datetime.strptime(dstr, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except Exception:
+        return _esc(dstr)
 
 
 def _fmt_dt(iso: str) -> str:
@@ -133,7 +147,17 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
     </div>
   </div>
 
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter">
+  <section class="bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/10 flex flex-col sm:flex-row sm:items-center gap-3">
+    <span class="flex items-center gap-2 text-on-surface-variant font-body-md"><span class="material-symbols-outlined text-primary">calendar_month</span> Détail d'une journée :</span>
+    <form action="/dashboard/day" method="get" class="flex gap-2 flex-1">
+      <input type="hidden" name="key" value="%%K%%"/>
+      <input type="date" name="date" value="%%TODAY%%" class="fld font-body-md flex-1"/>
+      <button class="bg-primary text-on-primary px-4 py-2 rounded-xl font-label-md text-label-md hover:bg-primary/90 active:scale-95 transition-all">Voir</button>
+    </form>
+    <a href="/dashboard/day?key=%%K%%&amp;date=%%TODAY%%" class="fld hover:border-primary flex items-center justify-center gap-1 font-body-md"><span class="material-symbols-outlined text-[20px] text-primary">today</span> Aujourd'hui</a>
+  </section>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-gutter">
     <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-32">
       <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Messages reçus</span>
       <div class="flex items-end justify-between"><span class="text-[32px] font-bold text-primary">%%MSG%%</span>
@@ -149,27 +173,18 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
       <div class="flex items-end justify-between"><span class="text-[32px] font-bold text-primary">%%DAYS%%</span>
         <span class="material-symbols-outlined text-primary opacity-20 text-[32px]">event_available</span></div>
     </div>
-  </div>
-
-  <section class="bg-error-container/10 p-6 rounded-xl card-shadow border border-error-container/40">
-    <div class="flex items-center gap-2 mb-4">
-      <span class="material-symbols-outlined text-error">notification_important</span>
-      <h3 class="font-headline-sm text-headline-sm text-error">À rappeler — demandes sans produit trouvé</h3>
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-error-container/30 flex flex-col justify-between h-32">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Demandes ratées</span>
+      <div class="flex items-end justify-between"><span class="text-[32px] font-bold text-error">%%NMISS%%</span>
+        <span class="material-symbols-outlined text-error opacity-20 text-[32px]">notification_important</span></div>
     </div>
-    <div class="overflow-x-auto"><table class="w-full">
-      <thead><tr class="border-b border-error-container/30">
-        <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Quand</th>
-        <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Numéro (cliquer pour rappeler)</th>
-        <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Sa demande</th>
-      </tr></thead>
-      <tbody class="divide-y divide-error-container/20">%%MISSED%%</tbody>
-    </table></div>
-  </section>
+  </div>
 
   <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
     <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">bar_chart</span>
       <h3 class="font-headline-sm text-headline-sm">Messages par jour</h3></div>
     <div class="h-64 flex items-end gap-6 md:gap-10 px-2 md:px-6 border-b border-outline-variant/30 pb-2 overflow-x-auto">%%BARS%%</div>
+    <p class="text-on-surface-variant font-label-sm mt-2">Cliquez une barre (ou choisissez une date) pour voir le détail du jour.</p>
   </section>
 
   <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
@@ -179,59 +194,7 @@ _BODY_DASHBOARD = """<body class="bg-background text-on-surface pb-10 md:pb-0">
     <p class="text-on-surface-variant font-label-sm mt-2">Messages par heure (0–23 h, heure de France).</p>
   </section>
 
-  <div class="bento-grid">
-    <section class="col-span-12 md:col-span-6 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">search</span>
-        <h3 class="font-headline-sm text-headline-sm">Recherches les plus fréquentes</h3></div>
-      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
-        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Recherche</th>
-        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th></tr></thead>
-        <tbody class="divide-y divide-outline-variant/10">%%QUERIES%%</tbody></table></div>
-    </section>
-    <section class="col-span-12 md:col-span-6 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">shopping_cart</span>
-        <h3 class="font-headline-sm text-headline-sm">Produits les plus proposés</h3></div>
-      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
-        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Produit</th>
-        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th></tr></thead>
-        <tbody class="divide-y divide-outline-variant/10">%%PRODUCTS%%</tbody></table></div>
-    </section>
-    <section class="col-span-12 md:col-span-8 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">contact_phone</span>
-        <h3 class="font-headline-sm text-headline-sm">Numéros qui ont contacté le bot</h3></div>
-      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
-        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Numéro</th>
-        <th class="text-center py-3 font-label-sm text-on-surface-variant uppercase">Messages</th>
-        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Dernier</th></tr></thead>
-        <tbody class="divide-y divide-outline-variant/10">%%CLIENTS%%</tbody></table></div>
-    </section>
-    <section class="col-span-12 md:col-span-4 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-error">search_off</span>
-        <h3 class="font-headline-sm text-headline-sm">Recherches sans résultat</h3></div>
-      <div class="space-y-2">%%FAILED%%</div>
-    </section>
-  </div>
-
-  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-    <div class="flex items-center justify-between mb-4">
-      <div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary">inventory_2</span>
-        <h3 class="font-headline-sm text-headline-sm">Produits jamais proposés</h3></div>
-      <span class="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-sm">%%NEVERCOUNT%%</span>
-    </div>
-    <ul class="grid grid-cols-1 sm:grid-cols-2 gap-x-8">%%NEVER%%</ul>
-  </section>
-
-  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
-    <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">forum</span>
-      <h3 class="font-headline-sm text-headline-sm">Derniers messages</h3></div>
-    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
-      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Quand</th>
-      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">De</th>
-      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Message</th></tr></thead>
-      <tbody class="divide-y divide-outline-variant/10">%%RECENT%%</tbody></table></div>
-  </section>
-
-  <p class="text-center text-on-surface-variant font-label-sm pt-2">Données lues depuis data/stats.json · remises à zéro au redéploiement (voir ⚙️ Réglages pour Sauvegarder / Charger).</p>
+  <p class="text-center text-on-surface-variant font-label-sm pt-2">Vue d'ensemble · les détails (clients, produits, demandes) sont accessibles en choisissant une date. Sauvegarde dans ⚙️ Réglages.</p>
 </main>
 
 <aside class="hidden md:flex fixed left-0 top-16 bottom-0 w-20 flex-col items-center py-6 gap-4 bg-surface-container-low border-r border-white/5 z-40">
@@ -370,37 +333,9 @@ def _product_rows(items, empty):
     return out
 
 
-def render(summary: dict, key: str = "", never: dict | None = None, status: dict | None = None) -> str:
-    k = _esc(key)
-    never = never or {"count": 0, "total": 0, "sample": []}
-    status = status or {"ai": "—", "whatsapp": "—"}
-    by_day = summary["by_day"]
-    max_day = max(by_day.values(), default=1) or 1
-
-    bars = "".join(
-        f'<div class="flex flex-col items-center gap-2 w-full max-w-[40px] shrink-0">'
-        f'<div class="relative w-full bg-primary rounded-t-lg transition-all duration-700 hover:brightness-125" '
-        f'style="height:{max(4, round(v / max_day * 200))}px;">'
-        f'<span class="absolute -top-8 left-1/2 -translate-x-1/2 font-label-sm text-primary">{v}</span></div>'
-        f'<span class="font-label-sm text-on-surface-variant text-[10px]">{_esc(d[5:])}</span></div>'
-        for d, v in by_day.items()
-    ) or '<p class="text-on-surface-variant font-body-md">Aucune donnée pour l\'instant.</p>'
-
-    clients = "".join(
-        '<tr class="hover:bg-white/5 transition-colors">'
-        f'<td class="py-4 font-body-md font-semibold">'
-        f'<a href="/dashboard/client?key={k}&amp;num={_esc(u["num"])}" class="text-primary hover:underline" title="Voir le rapport">{_esc(u["num"])}</a>'
-        f'<a href="https://wa.me/{_esc(u["num"])}" target="_blank" title="Rappeler sur WhatsApp" '
-        f'class="text-on-surface-variant hover:text-primary ml-2 align-middle"><span class="material-symbols-outlined text-[16px] align-middle">chat</span></a></td>'
-        f'<td class="py-4 text-center font-body-md">{_esc(u["count"])}</td>'
-        f'<td class="py-4 text-right font-body-md text-on-surface-variant">'
-        f'{_fmt_dt(u["last"]) if u["last"] else "—"}</td></tr>'
-        for u in summary["users"]
-    ) or '<tr><td colspan="3" class="py-4 font-body-md text-on-surface-variant">Aucun client pour l\'instant.</td></tr>'
-
-    by_hour = summary["by_hour"]
+def _hourbars(by_hour) -> str:
     max_h = max(by_hour) or 1
-    hourbars = "".join(
+    return "".join(
         f'<div class="flex flex-col items-center gap-1 shrink-0" style="min-width:22px;">'
         f'<div class="w-3 bg-tertiary rounded-t transition-all" style="height:{max(3, round(v / max_h * 120))}px;" '
         f'title="{h}h — {v} message(s)"></div>'
@@ -408,10 +343,155 @@ def render(summary: dict, key: str = "", never: dict | None = None, status: dict
         for h, v in enumerate(by_hour)
     )
 
-    never_list = "".join(
-        f'<li class="py-1.5 border-b border-outline-variant/10 font-body-sm text-on-surface-variant">{_esc(n)}</li>'
-        for n in never["sample"]
-    ) or '<li class="py-2 font-body-md text-on-surface-variant">Tous les produits ont été proposés 🎉</li>'
+
+def render(summary: dict, key: str = "", status: dict | None = None) -> str:
+    """Page principale RÉDUITE : chiffres + graphiques + sélecteur de date."""
+    k = _esc(key)
+    status = status or {"ai": "—", "whatsapp": "—"}
+    by_day = summary["by_day"]
+    max_day = max(by_day.values(), default=1) or 1
+
+    # barres cliquables -> détail du jour
+    bars = "".join(
+        f'<a href="/dashboard/day?key={k}&amp;date={_esc(d)}" class="flex flex-col items-center gap-2 w-full max-w-[40px] shrink-0 group" title="Voir le {_esc(d)}">'
+        f'<div class="relative w-full bg-primary rounded-t-lg transition-all duration-700 group-hover:brightness-125" '
+        f'style="height:{max(4, round(v / max_day * 200))}px;">'
+        f'<span class="absolute -top-8 left-1/2 -translate-x-1/2 font-label-sm text-primary">{v}</span></div>'
+        f'<span class="font-label-sm text-on-surface-variant text-[10px] group-hover:text-primary">{_esc(d[5:])}</span></a>'
+        for d, v in by_day.items()
+    ) or '<p class="text-on-surface-variant font-body-md">Aucune donnée pour l\'instant.</p>'
+
+    out = _HEAD + _BODY_DASHBOARD
+    for token, value in {
+        "%%TITLE%%": "Effi-Market Bot — Tableau de bord",
+        "%%K%%": k,
+        "%%TODAY%%": _esc(summary.get("today", "")),
+        "%%STARTED%%": _fmt_dt(summary["started_at"]),
+        "%%MSG%%": _esc(summary["messages_total"]),
+        "%%USERS%%": _esc(summary["users_total"]),
+        "%%DAYS%%": _esc(len(by_day)),
+        "%%NMISS%%": _esc(summary.get("missed_total", 0)),
+        "%%BARS%%": bars,
+        "%%HOURBARS%%": _hourbars(summary["by_hour"]),
+        "%%STATUS_AI%%": _esc(status["ai"]),
+        "%%STATUS_WA%%": _esc(status["whatsapp"]),
+    }.items():
+        out = out.replace(token, value)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# DÉTAIL D'UNE JOURNÉE
+# ---------------------------------------------------------------------------
+_BODY_DAY = """<body class="bg-background text-on-surface pb-10">
+
+<header class="bg-surface-container-low border-b border-white/5 fixed top-0 w-full z-50 flex justify-between items-center px-5 h-16">
+  <div class="flex items-center gap-3">
+    <span class="material-symbols-outlined text-primary">calendar_month</span>
+    <h1 class="font-headline-sm text-headline-sm font-bold text-primary">Détail du jour</h1>
+  </div>
+  <a href="/dashboard?key=%%K%%" class="flex items-center gap-2 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-xl font-label-md text-label-md hover:brightness-110 active:scale-95 transition-all">
+    <span class="material-symbols-outlined text-[20px]">arrow_back</span> Tableau de bord
+  </a>
+</header>
+
+<main class="max-w-container-max mx-auto p-gutter space-y-gutter mt-20">
+
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <h2 class="font-headline-md text-headline-md text-primary">Journée du %%DATELABEL%%</h2>
+      <p class="font-body-md text-on-surface-variant">%%NMSG%% message(s) · %%NCLIENTS%% client(s)</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/dashboard/day?key=%%K%%&amp;date=%%PREV%%" class="fld hover:border-primary flex items-center" title="Jour précédent"><span class="material-symbols-outlined">chevron_left</span></a>
+      <form action="/dashboard/day" method="get" class="flex gap-2">
+        <input type="hidden" name="key" value="%%K%%"/>
+        <input type="date" name="date" value="%%DATE%%" class="fld font-body-md"/>
+        <button class="bg-primary text-on-primary px-3 rounded-xl font-label-md text-label-md">OK</button>
+      </form>
+      <a href="/dashboard/day?key=%%K%%&amp;date=%%NEXT%%" class="fld hover:border-primary flex items-center" title="Jour suivant"><span class="material-symbols-outlined">chevron_right</span></a>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-gutter">
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-28">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Messages</span>
+      <span class="text-[28px] font-bold text-primary">%%NMSG%%</span></div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-28">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Clients</span>
+      <span class="text-[28px] font-bold text-primary">%%NCLIENTS%%</span></div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-28">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Produits proposés</span>
+      <span class="text-[28px] font-bold text-primary">%%NPROD%%</span></div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-error-container/30 flex flex-col justify-between h-28">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Demandes ratées</span>
+      <span class="text-[28px] font-bold text-error">%%NMISSED%%</span></div>
+  </div>
+
+  <section class="bg-error-container/10 p-6 rounded-xl card-shadow border border-error-container/40">
+    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-error">notification_important</span>
+      <h3 class="font-headline-sm text-headline-sm text-error">À rappeler — demandes sans produit ce jour</h3></div>
+    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-error-container/30">
+      <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Quand</th>
+      <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Numéro (cliquer pour rappeler)</th>
+      <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Sa demande</th></tr></thead>
+      <tbody class="divide-y divide-error-container/20">%%MISSED%%</tbody></table></div>
+  </section>
+
+  <div class="bento-grid">
+    <section class="col-span-12 md:col-span-6 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">contact_phone</span>
+        <h3 class="font-headline-sm text-headline-sm">Clients du jour</h3></div>
+      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Numéro</th>
+        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Messages</th></tr></thead>
+        <tbody class="divide-y divide-outline-variant/10">%%CLIENTS%%</tbody></table></div>
+    </section>
+    <section class="col-span-12 md:col-span-6 bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+      <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">shopping_cart</span>
+        <h3 class="font-headline-sm text-headline-sm">Produits proposés ce jour</h3></div>
+      <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+        <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Produit</th>
+        <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th></tr></thead>
+        <tbody class="divide-y divide-outline-variant/10">%%PRODUCTS%%</tbody></table></div>
+    </section>
+  </div>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">search</span>
+      <h3 class="font-headline-sm text-headline-sm">Recherches du jour</h3></div>
+    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Recherche</th>
+      <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Nb</th></tr></thead>
+      <tbody class="divide-y divide-outline-variant/10">%%QUERIES%%</tbody></table></div>
+  </section>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-6"><span class="material-symbols-outlined text-primary">forum</span>
+      <h3 class="font-headline-sm text-headline-sm">Messages du jour</h3></div>
+    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Quand</th>
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">De</th>
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Message</th></tr></thead>
+      <tbody class="divide-y divide-outline-variant/10">%%RECENT%%</tbody></table></div>
+  </section>
+</main>
+</body></html>"""
+
+
+def render_day(report: dict, key: str = "") -> str:
+    """Page détail d'une journée."""
+    k = _esc(key)
+    date = report["date"]
+    clients = "".join(
+        '<tr class="hover:bg-white/5 transition-colors">'
+        f'<td class="py-4 font-body-md font-semibold">'
+        f'<a href="/dashboard/client?key={k}&amp;num={_esc(c["num"])}" class="text-primary hover:underline" title="Voir le rapport">{_esc(c["num"])}</a>'
+        f'<a href="https://wa.me/{_esc(c["num"])}" target="_blank" title="Rappeler" '
+        f'class="text-on-surface-variant hover:text-primary ml-2 align-middle"><span class="material-symbols-outlined text-[16px] align-middle">chat</span></a></td>'
+        f'<td class="py-4 text-right font-body-md">{_esc(c["count"])}</td></tr>'
+        for c in report["clients"]
+    ) or '<tr><td colspan="2" class="py-4 font-body-md text-on-surface-variant">Aucun client ce jour.</td></tr>'
 
     missed = "".join(
         '<tr class="hover:bg-white/5 transition-colors">'
@@ -420,44 +500,34 @@ def render(summary: dict, key: str = "", never: dict | None = None, status: dict
         f'class="text-error font-semibold hover:underline inline-flex items-center gap-1">'
         f'<span class="material-symbols-outlined text-[16px]">call</span>{_esc(mr["from"])}</a></td>'
         f'<td class="py-3 font-body-md">{_esc(mr["query"])}</td></tr>'
-        for mr in summary["missed"]
-    ) or '<tr><td colspan="3" class="py-3 font-body-md text-on-surface-variant">Aucune demande non satisfaite 🎉</td></tr>'
-
-    failed = "".join(
-        '<div class="flex justify-between items-center p-3 bg-error-container/10 border '
-        'border-error-container/20 rounded-lg hover:bg-error-container/20 transition-all">'
-        f'<span class="font-body-md text-on-surface-variant">{_esc(q)}</span>'
-        f'<span class="bg-error-container text-on-error-container px-2 py-0.5 rounded-full font-label-sm">{_esc(v)}</span></div>'
-        for q, v in summary["failed_searches"]
-    ) or '<p class="text-on-surface-variant font-body-md">Aucune — tout a été trouvé 🎉</p>'
+        for mr in report["missed"]
+    ) or '<tr><td colspan="3" class="py-3 font-body-md text-on-surface-variant">Aucune demande non satisfaite ce jour 🎉</td></tr>'
 
     recent = "".join(
         '<tr class="hover:bg-white/5 transition-colors">'
         f'<td class="py-3 font-body-sm text-on-surface-variant whitespace-nowrap">{_fmt_dt(r["t"])}</td>'
-        f'<td class="py-3 font-body-sm font-semibold text-primary whitespace-nowrap">{_esc(r["from"])}</td>'
+        f'<td class="py-3 font-body-sm font-semibold text-primary whitespace-nowrap">'
+        f'<a href="/dashboard/client?key={k}&amp;num={_esc(r["from"])}" class="hover:underline">{_esc(r["from"])}</a></td>'
         f'<td class="py-3 font-body-md">{_esc(r["text"])}</td></tr>'
-        for r in summary["recent"]
-    ) or '<tr><td colspan="3" class="py-4 font-body-md text-on-surface-variant">Aucun message pour l\'instant.</td></tr>'
+        for r in report["recent"]
+    ) or '<tr><td colspan="3" class="py-4 font-body-md text-on-surface-variant">Aucun message ce jour.</td></tr>'
 
-    out = _HEAD + _BODY_DASHBOARD
+    out = _HEAD + _BODY_DAY
     for token, value in {
-        "%%TITLE%%": "Effi-Market Bot — Tableau de bord",
+        "%%TITLE%%": "Effi-Market Bot — Journée",
         "%%K%%": k,
-        "%%STARTED%%": _fmt_dt(summary["started_at"]),
-        "%%MSG%%": _esc(summary["messages_total"]),
-        "%%USERS%%": _esc(summary["users_total"]),
-        "%%DAYS%%": _esc(len(by_day)),
-        "%%BARS%%": bars,
-        "%%HOURBARS%%": hourbars,
-        "%%QUERIES%%": _two_col(summary["top_queries"], "Aucune recherche."),
-        "%%PRODUCTS%%": _product_rows(summary["top_products"], "Aucun produit affiché."),
-        "%%CLIENTS%%": clients,
-        "%%FAILED%%": failed,
+        "%%DATE%%": _esc(date),
+        "%%DATELABEL%%": _esc(_datelabel(date)),
+        "%%PREV%%": _esc(_shift(date, -1)),
+        "%%NEXT%%": _esc(_shift(date, 1)),
+        "%%NMSG%%": _esc(report["messages"]),
+        "%%NCLIENTS%%": _esc(len(report["clients"])),
+        "%%NPROD%%": _esc(len(report["products"])),
+        "%%NMISSED%%": _esc(len(report["missed"])),
         "%%MISSED%%": missed,
-        "%%NEVER%%": never_list,
-        "%%NEVERCOUNT%%": f'{never["count"]} / {never["total"]}',
-        "%%STATUS_AI%%": _esc(status["ai"]),
-        "%%STATUS_WA%%": _esc(status["whatsapp"]),
+        "%%CLIENTS%%": clients,
+        "%%PRODUCTS%%": _product_rows(report["products"], "Aucun produit proposé ce jour."),
+        "%%QUERIES%%": _two_col(report["top_queries"], "Aucune recherche ce jour."),
         "%%RECENT%%": recent,
     }.items():
         out = out.replace(token, value)

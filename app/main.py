@@ -152,11 +152,6 @@ def dashboard_page(request: Request):
     if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
         return Response(content="Accès refusé", status_code=403)
 
-    # Produits jamais proposés (trous de mise en avant du catalogue).
-    shown = stats.product_names()
-    never = [p.name for p in catalog.products if p.name not in shown]
-    never_info = {"count": len(never), "total": len(catalog.products), "sample": never[:15]}
-
     # Statut : moteur(s) IA actif(s) + WhatsApp.
     if isinstance(provider, ai.FallbackProvider):
         ai_label = " → ".join(p.label for p in provider.providers)
@@ -168,8 +163,17 @@ def dashboard_page(request: Request):
     }
 
     return HTMLResponse(
-        content=dashboard.render(stats.summary(), config.WHATSAPP_VERIFY_TOKEN, never_info, status)
+        content=dashboard.render(stats.summary(), config.WHATSAPP_VERIFY_TOKEN, status)
     )
+
+
+@app.get("/dashboard/day")
+def dashboard_day(request: Request):
+    """Détail d'une journée. ?key=<verify_token>&date=YYYY-MM-DD (défaut : aujourd'hui)."""
+    if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    date = request.query_params.get("date", "").strip() or stats._today_key()
+    return HTMLResponse(content=dashboard.render_day(stats.day_report(date), config.WHATSAPP_VERIFY_TOKEN))
 
 
 @app.get("/dashboard/client")

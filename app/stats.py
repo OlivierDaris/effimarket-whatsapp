@@ -53,7 +53,9 @@ class Stats:
         data.setdefault("products", {})    # nom produit -> {count, url}
         data.setdefault("failed_searches", {})  # recherche sans résultat -> nb
         data.setdefault("missed", [])      # demandes sans produit [{t, from, query}]
+        data.setdefault("missed_total", len(data.get("missed", [])))  # compteur cumulé
         data.setdefault("recent", [])      # derniers messages [{t, from, text}]
+        data.setdefault("days", {})        # "YYYY-MM-DD" -> détail du jour
         # migration : ancien format produits (nom -> int)
         for name, v in list(data["products"].items()):
             if not isinstance(v, dict):
@@ -76,6 +78,21 @@ class Stats:
             u = {"count": 0, "first": now_iso, "last": None, "products": {}, "missed": [], "messages": []}
             self._data["users"][sender] = u
         return u
+
+    @staticmethod
+    def _today_key() -> str:
+        return _now().astimezone(PARIS).strftime("%Y-%m-%d")
+
+    def _day(self, day_key: str) -> dict:
+        """Renvoie (en créant au besoin) le détail d'un jour."""
+        db = self._data["days"].get(day_key)
+        if not isinstance(db, dict):
+            db = {"messages": 0, "users": {}, "products": {}, "missed": [], "queries": {}, "recent": []}
+            self._data["days"][day_key] = db
+            if len(self._data["days"]) > 90:  # garde ~3 mois
+                for old in sorted(self._data["days"])[:-90]:
+                    self._data["days"].pop(old, None)
+        return db
 
     # -- sauvegarde / restauration (contourne le disque éphémère) --------------
     def raw_json(self) -> str:
@@ -124,6 +141,15 @@ class Stats:
 
             d["recent"].insert(0, {"t": now.isoformat(), "from": sender, "text": (text or "")[:200]})
             d["recent"] = d["recent"][:50]
+
+            # détail du jour
+            db = self._day(day)
+            db["messages"] += 1
+            db["users"][sender] = db["users"].get(sender, 0) + 1
+            if q:
+                db["queries"][q] = db["queries"].get(q, 0) + 1
+            db["recent"].insert(0, {"t": now.isoformat(), "from": sender, "text": (text or "")[:200]})
+            db["recent"] = db["recent"][:200]
             self._save()
 
     def record_search(self, query: str, found: bool) -> None:
@@ -147,10 +173,14 @@ class Stats:
             now = _now().isoformat()
             self._data["missed"].insert(0, {"t": now, "from": sender or "?", "query": q})
             self._data["missed"] = self._data["missed"][:60]
+            self._data["missed_total"] = self._data.get("missed_total", 0) + 1
             u = self._data["users"].get(sender)
             if isinstance(u, dict):
                 u.setdefault("missed", []).insert(0, {"t": now, "query": q})
                 u["missed"] = u["missed"][:20]
+            db = self._day(self._today_key())
+            db["missed"].insert(0, {"t": now, "from": sender or "?", "query": q})
+            db["missed"] = db["missed"][:200]
             self._save()
 
     def record_products(self, sender: str, items: list[tuple[str, str]]) -> None:
@@ -161,6 +191,7 @@ class Stats:
             prods = self._data["products"]
             u = self._data["users"].get(sender)
             uprods = u["products"] if isinstance(u, dict) else None
+            dprods = self._day(self._today_key())["products"]  # produits du jour
             for name, url in items:
                 if not name:
                     continue
@@ -181,6 +212,14 @@ class Stats:
                     pe["count"] += 1
                     if url and not pe.get("url"):
                         pe["url"] = url
+                # par jour
+                de = dprods.get(name)
+                if not isinstance(de, dict):
+                    de = {"count": 0, "url": url or ""}
+                    dprods[name] = de
+                de["count"] += 1
+                if url and not de.get("url"):
+                    de["url"] = url
             self._save()
 
     def report(self, num: str) -> dict | None:
@@ -211,6 +250,34 @@ class Stats:
         """Ensemble des noms de produits déjà proposés (pour les 'jamais proposés')."""
         with self._lock:
             return set(self._data["products"].keys())
+
+    def day_report(self, date: str) -> dict:
+        """Détail d'un jour (pour la page de détail par date)."""
+        with self._lock:
+            db = self._data["days"].get(date)
+            if not isinstance(db, dict):
+                db = {"messages": 0, "users": {}, "products": {}, "missed": [], "queries": {}, "recent": []}
+            clients = sorted(
+                ({"num": n, "count": c} for n, c in db.get("users", {}).items()),
+                key=lambda x: x["count"], reverse=True,
+            )
+            products = sorted(
+                (
+                    {"name": n, "count": v.get("count", 0), "url": v.get("url", "")}
+                    for n, v in db.get("products", {}).items()
+                ),
+                key=lambda p: p["count"], reverse=True,
+            )
+            top_queries = sorted(db.get("queries", {}).items(), key=lambda kv: kv[1], reverse=True)[:10]
+            return {
+                "date": date,
+                "messages": db.get("messages", 0),
+                "clients": clients,
+                "products": products,
+                "top_queries": top_queries,
+                "missed": list(db.get("missed", []))[:50],
+                "recent": list(db.get("recent", []))[:50],
+            }
 
     # -- lecture ---------------------------------------------------------------
     def summary(self) -> dict:
@@ -245,6 +312,9 @@ class Stats:
                 "messages_total": d["messages_total"],
                 "users_total": len(d["users"]),
                 "started_at": d["started_at"],
+                "missed_total": d.get("missed_total", len(d["missed"])),
+                "dates": sorted(d["days"].keys(), reverse=True),
+                "today": self._today_key(),
                 "by_day": by_day,
                 "by_hour": by_hour,
                 "top_queries": top_queries,
