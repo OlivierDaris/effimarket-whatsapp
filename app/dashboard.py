@@ -378,9 +378,10 @@ def render(summary: dict, key: str = "", never: dict | None = None, status: dict
 
     clients = "".join(
         '<tr class="hover:bg-white/5 transition-colors">'
-        f'<td class="py-4 font-body-md font-semibold"><a href="https://wa.me/{_esc(u["num"])}" target="_blank" '
-        f'class="text-primary hover:underline inline-flex items-center gap-1">'
-        f'<span class="material-symbols-outlined text-[16px]">chat</span>{_esc(u["num"])}</a></td>'
+        f'<td class="py-4 font-body-md font-semibold">'
+        f'<a href="/dashboard/client?key={k}&amp;num={_esc(u["num"])}" class="text-primary hover:underline" title="Voir le rapport">{_esc(u["num"])}</a>'
+        f'<a href="https://wa.me/{_esc(u["num"])}" target="_blank" title="Rappeler sur WhatsApp" '
+        f'class="text-on-surface-variant hover:text-primary ml-2 align-middle"><span class="material-symbols-outlined text-[16px] align-middle">chat</span></a></td>'
         f'<td class="py-4 text-center font-body-md">{_esc(u["count"])}</td>'
         f'<td class="py-4 text-right font-body-md text-on-surface-variant">'
         f'{_fmt_dt(u["last"]) if u["last"] else "—"}</td></tr>'
@@ -448,6 +449,113 @@ def render(summary: dict, key: str = "", never: dict | None = None, status: dict
         "%%STATUS_AI%%": _esc(status["ai"]),
         "%%STATUS_WA%%": _esc(status["whatsapp"]),
         "%%RECENT%%": recent,
+    }.items():
+        out = out.replace(token, value)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# RAPPORT DÉTAILLÉ D'UN CLIENT
+# ---------------------------------------------------------------------------
+_BODY_CLIENT = """<body class="bg-background text-on-surface pb-10">
+
+<header class="bg-surface-container-low border-b border-white/5 fixed top-0 w-full z-50 flex justify-between items-center px-5 h-16">
+  <div class="flex items-center gap-3">
+    <span class="material-symbols-outlined text-primary">contact_phone</span>
+    <h1 class="font-headline-sm text-headline-sm font-bold text-primary">Rapport client</h1>
+  </div>
+  <a href="/dashboard?key=%%K%%" class="flex items-center gap-2 px-4 py-2 bg-secondary-container text-on-secondary-container rounded-xl font-label-md text-label-md hover:brightness-110 active:scale-95 transition-all">
+    <span class="material-symbols-outlined text-[20px]">arrow_back</span> Tableau de bord
+  </a>
+</header>
+
+<main class="max-w-3xl mx-auto p-gutter space-y-gutter mt-20">
+
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <h2 class="font-headline-md text-headline-md text-primary">%%NUM%%</h2>
+      <p class="font-body-md text-on-surface-variant">Premier contact : %%FIRST%% · Dernier : %%LAST%%</p>
+    </div>
+    <a href="https://wa.me/%%NUM%%" target="_blank" class="bg-primary text-on-primary px-5 py-3 rounded-xl flex items-center gap-2 font-label-md text-label-md hover:bg-primary/90 active:scale-95 transition-all">
+      <span class="material-symbols-outlined text-[20px]">chat</span> Rappeler sur WhatsApp
+    </a>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-gutter">
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-28">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Messages</span>
+      <span class="text-[28px] font-bold text-primary">%%NMSG%%</span>
+    </div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-28">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Produits proposés</span>
+      <span class="text-[28px] font-bold text-primary">%%NPROD%%</span>
+    </div>
+    <div class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10 flex flex-col justify-between h-28">
+      <span class="font-label-sm text-label-sm text-on-surface-variant uppercase">Demandes ratées</span>
+      <span class="text-[28px] font-bold text-error">%%NMISS%%</span>
+    </div>
+  </div>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-primary">favorite</span>
+      <h3 class="font-headline-sm text-headline-sm">Produits préférés (proposés à ce client)</h3></div>
+    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+      <th class="text-left py-3 font-label-sm text-on-surface-variant uppercase">Produit</th>
+      <th class="text-right py-3 font-label-sm text-on-surface-variant uppercase">Fois proposé</th></tr></thead>
+      <tbody class="divide-y divide-outline-variant/10">%%PRODUCTS%%</tbody></table></div>
+  </section>
+
+  <section class="bg-error-container/10 p-6 rounded-xl card-shadow border border-error-container/30">
+    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-error">search_off</span>
+      <h3 class="font-headline-sm text-headline-sm text-error">Ses demandes sans produit trouvé</h3></div>
+    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-error-container/30">
+      <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Quand</th>
+      <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Demande</th></tr></thead>
+      <tbody class="divide-y divide-error-container/20">%%MISSED%%</tbody></table></div>
+  </section>
+
+  <section class="bg-surface-container-lowest p-6 rounded-xl card-shadow border border-outline-variant/10">
+    <div class="flex items-center gap-2 mb-4"><span class="material-symbols-outlined text-primary">forum</span>
+      <h3 class="font-headline-sm text-headline-sm">Ses derniers messages</h3></div>
+    <div class="overflow-x-auto"><table class="w-full"><thead><tr class="border-b border-outline-variant/20">
+      <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Quand</th>
+      <th class="text-left py-2 font-label-sm text-on-surface-variant uppercase">Message</th></tr></thead>
+      <tbody class="divide-y divide-outline-variant/10">%%MESSAGES%%</tbody></table></div>
+  </section>
+</main>
+</body></html>"""
+
+
+def render_client(report: dict, key: str = "") -> str:
+    """Page rapport détaillé d'un client."""
+    k = _esc(key)
+    products = _product_rows(report["products"], "Aucun produit proposé.")
+    missed = "".join(
+        '<tr class="hover:bg-white/5 transition-colors">'
+        f'<td class="py-3 font-body-sm text-on-surface-variant whitespace-nowrap">{_fmt_dt(mr["t"])}</td>'
+        f'<td class="py-3 font-body-md">{_esc(mr["query"])}</td></tr>'
+        for mr in report["missed"]
+    ) or '<tr><td colspan="2" class="py-3 font-body-md text-on-surface-variant">Aucune — toutes ses demandes ont abouti 🎉</td></tr>'
+    messages = "".join(
+        '<tr class="hover:bg-white/5 transition-colors">'
+        f'<td class="py-3 font-body-sm text-on-surface-variant whitespace-nowrap">{_fmt_dt(mg["t"])}</td>'
+        f'<td class="py-3 font-body-md">{_esc(mg["text"])}</td></tr>'
+        for mg in report["messages"]
+    ) or '<tr><td colspan="2" class="py-3 font-body-md text-on-surface-variant">Aucun message.</td></tr>'
+
+    out = _HEAD + _BODY_CLIENT
+    for token, value in {
+        "%%TITLE%%": "Effi-Market Bot — Rapport client",
+        "%%K%%": k,
+        "%%NUM%%": _esc(report["num"]),
+        "%%FIRST%%": _fmt_dt(report["first"]) if report["first"] else "—",
+        "%%LAST%%": _fmt_dt(report["last"]) if report["last"] else "—",
+        "%%NMSG%%": _esc(report["count"]),
+        "%%NPROD%%": _esc(len(report["products"])),
+        "%%NMISS%%": _esc(len(report["missed"])),
+        "%%PRODUCTS%%": products,
+        "%%MISSED%%": missed,
+        "%%MESSAGES%%": messages,
     }.items():
         out = out.replace(token, value)
     return out

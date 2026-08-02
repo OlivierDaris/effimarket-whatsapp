@@ -172,6 +172,22 @@ def dashboard_page(request: Request):
     )
 
 
+@app.get("/dashboard/client")
+def dashboard_client(request: Request):
+    """Rapport détaillé d'un client. ?key=<verify_token>&num=<numero>."""
+    if request.query_params.get("key") != config.WHATSAPP_VERIFY_TOKEN:
+        return Response(content="Accès refusé", status_code=403)
+    num = request.query_params.get("num", "").strip()
+    rep = stats.report(num)
+    if rep is None:
+        back = f"/dashboard?key={config.WHATSAPP_VERIFY_TOKEN}"
+        return HTMLResponse(
+            f"<p>Client inconnu.</p><p><a href='{back}'>← Retour au tableau de bord</a></p>",
+            status_code=404,
+        )
+    return HTMLResponse(content=dashboard.render_client(rep, config.WHATSAPP_VERIFY_TOKEN))
+
+
 @app.get("/dashboard/export-clients")
 def dashboard_export_clients(request: Request):
     """Exporte la liste des clients en CSV (numéro, messages, premier, dernier)."""
@@ -291,7 +307,7 @@ def _send_products(sender: str, links: list[str]) -> int:
         except Exception as e:
             print(f"[ENVOI produit échoué] {e}")
             _safe_send_text(sender, caption)  # dernier repli : la fiche en texte
-    stats.record_products(shown)
+    stats.record_products(sender, shown)
     return sent
 
 

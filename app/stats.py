@@ -52,7 +52,24 @@ class Stats:
         for name, v in list(data["products"].items()):
             if not isinstance(v, dict):
                 data["products"][name] = {"count": int(v) if isinstance(v, int) else 0, "url": ""}
+        # backfill des sous-champs par utilisateur (rapport détaillé)
+        for info in data["users"].values():
+            if isinstance(info, dict):
+                info.setdefault("count", 0)
+                info.setdefault("first", None)
+                info.setdefault("last", None)
+                info.setdefault("products", {})   # nom -> {count, url}
+                info.setdefault("missed", [])     # [{t, query}]
+                info.setdefault("messages", [])   # [{t, text}]
         return data
+
+    def _user(self, sender: str, now_iso: str) -> dict:
+        """Renvoie (en créant au besoin) la fiche d'un utilisateur."""
+        u = self._data["users"].get(sender)
+        if not isinstance(u, dict):
+            u = {"count": 0, "first": now_iso, "last": None, "products": {}, "missed": [], "messages": []}
+            self._data["users"][sender] = u
+        return u
 
     # -- sauvegarde / restauration (contourne le disque éphémère) --------------
     def raw_json(self) -> str:
@@ -88,9 +105,11 @@ class Stats:
             hour = str(now.hour)
             d["by_hour"][hour] = d["by_hour"].get(hour, 0) + 1
 
-            u = d["users"].setdefault(sender, {"count": 0, "first": now.isoformat(), "last": None})
+            u = self._user(sender, now.isoformat())
             u["count"] += 1
             u["last"] = now.isoformat()
+            u["messages"].insert(0, {"t": now.isoformat(), "text": (text or "")[:200]})
+            u["messages"] = u["messages"][:20]
 
             q = (text or "").strip().lower()[:80]
             if q:
@@ -118,19 +137,27 @@ class Stats:
         if not q:
             return
         with self._lock:
-            self._data["missed"].insert(0, {"t": _now().isoformat(), "from": sender or "?", "query": q})
+            now = _now().isoformat()
+            self._data["missed"].insert(0, {"t": now, "from": sender or "?", "query": q})
             self._data["missed"] = self._data["missed"][:60]
+            u = self._data["users"].get(sender)
+            if isinstance(u, dict):
+                u.setdefault("missed", []).insert(0, {"t": now, "query": q})
+                u["missed"] = u["missed"][:20]
             self._save()
 
-    def record_products(self, items: list[tuple[str, str]]) -> None:
-        """items : liste de (nom, lien) des produits proposés."""
+    def record_products(self, sender: str, items: list[tuple[str, str]]) -> None:
+        """items : liste de (nom, lien) des produits proposés à `sender`."""
         if not items:
             return
         with self._lock:
             prods = self._data["products"]
+            u = self._data["users"].get(sender)
+            uprods = u["products"] if isinstance(u, dict) else None
             for name, url in items:
                 if not name:
                     continue
+                # global
                 e = prods.get(name)
                 if not isinstance(e, dict):
                     e = {"count": 0, "url": ""}
@@ -138,7 +165,40 @@ class Stats:
                 e["count"] += 1
                 if url and not e.get("url"):
                     e["url"] = url
+                # par utilisateur (produits « préférés »)
+                if uprods is not None:
+                    pe = uprods.get(name)
+                    if not isinstance(pe, dict):
+                        pe = {"count": 0, "url": url or ""}
+                        uprods[name] = pe
+                    pe["count"] += 1
+                    if url and not pe.get("url"):
+                        pe["url"] = url
             self._save()
+
+    def report(self, num: str) -> dict | None:
+        """Rapport détaillé d'un client (produits préférés, demandes ratées, messages)."""
+        with self._lock:
+            u = self._data["users"].get(num)
+            if not isinstance(u, dict):
+                return None
+            products = sorted(
+                (
+                    {"name": n, "count": v.get("count", 0), "url": v.get("url", "")}
+                    for n, v in u.get("products", {}).items()
+                ),
+                key=lambda p: p["count"],
+                reverse=True,
+            )
+            return {
+                "num": num,
+                "count": u.get("count", 0),
+                "first": u.get("first"),
+                "last": u.get("last"),
+                "products": products,
+                "missed": list(u.get("missed", []))[:20],
+                "messages": list(u.get("messages", []))[:20],
+            }
 
     def product_names(self) -> set:
         """Ensemble des noms de produits déjà proposés (pour les 'jamais proposés')."""
